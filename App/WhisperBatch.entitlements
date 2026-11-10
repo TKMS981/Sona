@@ -11,6 +11,9 @@
     <!-- 選択したファイルへのアクセスをセキュリティスコープ付きブックマークで保持する -->
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
+    <!-- ライブ文字起こしでマイクを使う（利用者がマイクをオンにしたときだけ。画面の音声は ScreenCaptureKit で取得し、追加の権限は不要） -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <!-- モデルのダウンロード（huggingface.co）にのみ使用 -->
     <key>com.apple.security.network.client</key>
     <true/>

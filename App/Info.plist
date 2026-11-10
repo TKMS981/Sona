@@ -10,11 +10,11 @@
         <string>ja</string>
     </array>
     <key>CFBundleDisplayName</key>
-    <string>Whisper Batch</string>
+    <string>Sona</string>
     <key>CFBundleName</key>
-    <string>Whisper Batch</string>
+    <string>Sona</string>
     <key>CFBundleExecutable</key>
-    <string>WhisperBatch</string>
+    <string>Sona</string>
     <key>CFBundleIdentifier</key>
     <string>com.example.WhisperBatch</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -22,9 +22,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.1</string>
+    <string>1.2.0</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
@@ -37,6 +37,9 @@
     <true/>
     <key>NSSupportsAutomaticTermination</key>
     <false/>
+    <!-- ライブ文字起こしでマイクを使うとき（利用者がマイクをオンにしたときだけ）に macOS が表示する説明 -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Live transcription uses the microphone only when you turn it on. Audio is processed on this Mac and never sent anywhere.</string>
     <!-- Finder の「このアプリケーションで開く」やアイコンへのドロップでキューに追加する（既定のアプリにはならない） -->
     <key>CFBundleDocumentTypes</key>
     <array>

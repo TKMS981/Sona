@@ -62,6 +62,13 @@ private struct EmptyQueueView: View {
                 .multilineTextAlignment(.center)
             Button(L("action.addFilesEllipsis")) { model.showFileImporter = true }
                 .controlSize(.large)
+            // 画面やマイクの音声をその場で文字起こしする（確認画面を経てから取り込みを始める）
+            Button {
+                model.live.openFromMainWindow()
+            } label: {
+                Label(L("main.live.start"), systemImage: "waveform.badge.mic")
+            }
+            .controlSize(.large)
             if model.isAddingFiles { ProgressView().controlSize(.small) }
             Text(L("queue.empty.formats", AudioFormats.summary))
                 .appFont(.caption)

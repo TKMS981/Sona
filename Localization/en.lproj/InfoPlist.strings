@@ -1,2 +1,3 @@
-"CFBundleDisplayName" = "Whisper Batch";
-"CFBundleName" = "Whisper Batch";
+"CFBundleDisplayName" = "Sona";
+"CFBundleName" = "Sona";
+"NSMicrophoneUsageDescription" = "Live transcription uses the microphone only when you turn it on. Audio is processed on this Mac and never sent anywhere.";

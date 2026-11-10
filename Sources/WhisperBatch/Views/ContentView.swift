@@ -1,8 +1,10 @@
 import SwiftUI
 import WhisperBatchCore
+import WhisperBatchEngine
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     /// 右側の幅が狭いときは設定や操作ボタンを縦に並べる
     @ViewState private var isCompact = false
 
@@ -20,6 +22,11 @@ struct ContentView: View {
                 .clipped()
                 .safeAreaInset(edge: .top, spacing: 0) {
                     VStack(spacing: 0) {
+                        // ライブ文字起こしが続いている・保存していない結果があるときの案内
+                        if model.live.isActive || model.live.hasUnsavedResult {
+                            LiveSessionBanner()
+                            Divider()
+                        }
                         RecognitionSettingsPanel(isCompact: isCompact)
                         Divider()
                     }
@@ -37,6 +44,8 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                LiveToolbarButton()
+
                 Button {
                     model.showFileImporter = true
                 } label: {
@@ -81,6 +90,10 @@ struct ContentView: View {
         }
         .modifier(DownloadConfirmation())
         .modifier(WindowThemeBackground(settings: model.appearance))
+        .onAppear {
+            // Dock のメニューやショートカットからライブ文字起こしのウインドウを開けるようにする
+            model.live.openLiveWindow = { openWindow(id: "live") }
+        }
         .alert(
             model.alert?.title ?? "",
             isPresented: Binding(get: { model.alert != nil }, set: { if !$0 { model.alert = nil } }),
@@ -90,6 +103,97 @@ struct ContentView: View {
         } message: { info in
             Text(info.message)
         }
+    }
+}
+
+/// ツールバーの「ライブ文字起こし」。開始前は確認画面を開き、取り込み中は状態と経過時間を示して
+/// ライブ文字起こしのウインドウに戻る（押しても取り込みの状態は変えない）。
+private struct LiveToolbarButton: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let live = model.live
+        Button {
+            live.openFromMainWindow()
+        } label: {
+            if live.isActive {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Label(L("toolbar.live.active", liveStateWord(live.state),
+                            TranscriptFormatter.clock(live.session.elapsed(at: context.date))),
+                          systemImage: live.state == .paused ? "pause.circle.fill" : "record.circle")
+                }
+                .foregroundStyle(live.state == .paused ? .orange : .red)
+            } else {
+                Label(L("toolbar.live"), systemImage: "waveform.badge.mic")
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .help(live.isActive ? L("toolbar.live.activeHelp") : L("toolbar.live.help"))
+        .accessibilityLabel(live.isActive ? live.statusText() : L("toolbar.live"))
+    }
+}
+
+/// 状態を表す短い語（取り込み中・一時停止中など）
+@MainActor
+func liveStateWord(_ state: LiveTranscriptionSession.State) -> String {
+    switch state {
+    case .idle: L("live.state.idle")
+    case .preparing: L("live.state.preparing")
+    case .running: L("live.state.running")
+    case .pausing: L("live.state.pausing")
+    case .paused: L("live.state.paused")
+    case .resuming: L("live.state.resuming")
+    case .finishing: L("live.state.finishing")
+    case .finished: L("live.state.finished")
+    }
+}
+
+/// メインウインドウ上部の案内: ライブ文字起こしの状態・経過時間・入力と、ライブの画面へ戻る・一時停止・終了の操作。
+/// 一括の文字起こしの画面を見ていても、ライブ文字起こしが続いていることが分かるようにする。
+private struct LiveSessionBanner: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let live = model.live
+        let session = live.session
+        HStack(spacing: 12) {
+            LiveStateBadge(state: session.state)
+            VStack(alignment: .leading, spacing: 2) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(L("main.live.title", TranscriptFormatter.clock(session.elapsed(at: context.date))))
+                        .appFont(.callout, weight: .medium, monospacedDigit: true)
+                }
+                Text(detail(live))
+                    .appFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            if session.state == .running || session.state == .paused {
+                Button(session.state == .paused ? L("live.action.resume") : L("live.action.pause")) { live.togglePause() }
+            }
+            if live.isActive {
+                Button(L("live.action.stop"), role: .destructive) { live.stop() }
+                    .disabled(session.state == .finishing)
+            }
+            Button(L("main.live.open")) { live.openFromMainWindow() }
+                .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("main.live.accessibility"))
+    }
+
+    private func detail(_ live: LiveController) -> String {
+        let session = live.session
+        if !live.isActive {
+            return L("main.live.unsaved")
+        }
+        let inputs = session.inputs.filter(\.isActive).map(\.label)
+        return inputs.isEmpty ? live.statusText() : L("main.live.inputs", inputs.joined(separator: " · "))
     }
 }
 

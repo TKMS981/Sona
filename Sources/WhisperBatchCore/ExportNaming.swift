@@ -56,4 +56,12 @@ public enum ExportNaming {
         f.dateFormat = "yyyy-MM-dd_HHmm"
         return L("export.combinedFileName", f.string(from: date))
     }
+
+    /// ライブ文字起こしの既定名（拡張子なし）
+    public static func liveFileName(date: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd_HHmm"
+        return L("export.liveFileName", f.string(from: date))
+    }
 }

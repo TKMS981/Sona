@@ -73,6 +73,7 @@ public final class WhisperContext: @unchecked Sendable {
         samples: [Float],
         language: String?,
         decoding: WhisperDecoding = .default,
+        prompt: String? = nil,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws -> ChunkResult {
         let flag = CancellationFlag()
@@ -85,7 +86,7 @@ public final class WhisperContext: @unchecked Sendable {
                         return
                     }
                     let result = Self.runFull(ctx: self.ctx, samples: samples, language: language,
-                                              decoding: decoding, flag: flag, progress: progress)
+                                              decoding: decoding, prompt: prompt, flag: flag, progress: progress)
                     continuation.resume(with: result)
                 }
             }
@@ -99,6 +100,7 @@ public final class WhisperContext: @unchecked Sendable {
         samples: [Float],
         language: String?,
         decoding: WhisperDecoding,
+        prompt: String?,
         flag: CancellationFlag,
         progress: @escaping @Sendable (Double) -> Void
     ) -> Result<ChunkResult, any Error> {
@@ -125,6 +127,10 @@ public final class WhisperContext: @unchecked Sendable {
         defer { free(languageC) }
         params.language = UnsafePointer(languageC)
         params.detect_language = false
+        // 手がかりの文（ライブ文字起こしの語彙のヒントと直前の確定文）。no_context でも初期プロンプトは使われる。
+        let promptC = prompt.flatMap { $0.isEmpty ? nil : strdup($0) }
+        defer { free(promptC) }
+        params.initial_prompt = promptC.map { UnsafePointer($0) }
 
         let box = CallbackBox(flag: flag, progress: progress)
         let boxPtr = Unmanaged.passRetained(box).toOpaque()

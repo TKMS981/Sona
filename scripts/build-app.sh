@@ -1,7 +1,7 @@
 #!/bin/zsh
-# Whisper Batch.app を組み立てる（Apple Silicon / arm64 のみ）。
+# Sona.app を組み立てる（Apple Silicon / arm64 のみ）。
 #
-#   ./scripts/build-app.sh            # リリースビルド → build/Whisper Batch.app
+#   ./scripts/build-app.sh            # リリースビルド → build/Sona.app
 #   ./scripts/build-app.sh debug      # デバッグビルド
 #
 # Xcode がなくても Command Line Tools（Swift 6.2 以降・macOS 27 SDK）で動く。
@@ -11,17 +11,31 @@
 #   環境変数 WB_SIGN_IDENTITY に Developer ID の証明書名を指定すると、アプリと同梱ライブラリを
 #   その証明書で署名し、Hardened Runtime（--options runtime）と署名時刻（--timestamp）を付ける。
 #     WB_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build-app.sh
-#   WB_DISABLE_LIBRARY_VALIDATION=1 を併せて指定すると、別の署名のライブラリも読み込めるようにする
-#   （利用者が libLAME.dylib を差し替えられるようにする場合。README の「Hardened Runtime での動作」を参照）。
-#   公証は scripts/make-dmg.sh で行う。
+#   同梱ライブラリを先に、アプリ本体を最後に、同じ証明書で署名する（同じ Team ID なので、
+#   Hardened Runtime のライブラリ検証のもとでも読み込める）。公証は scripts/make-dmg.sh で行う。
+#
+#   WB_DISABLE_LIBRARY_VALIDATION=1（通常の配布では使わない）:
+#     アプリに com.apple.security.cs.disable-library-validation を付け、Apple・同じ Team ID 以外が署名した
+#     ライブラリも読み込めるようにする。広い例外なので、必要性を確かめたときだけ明示的に指定する。
+#     WB_SIGN_IDENTITY と併用したときだけ有効（アドホック署名では Hardened Runtime がないため意味がなく、エラーにする）。
+#     README の「Hardened Runtime での動作」を参照。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 config="${1:-release}"
-app_name="Whisper Batch"
+app_name="Sona"
 out_dir="build"
 app="$out_dir/$app_name.app"
 identity="${WB_SIGN_IDENTITY:-}"
+disable_lv="${WB_DISABLE_LIBRARY_VALIDATION:-0}"
+if [[ "$disable_lv" != "0" && "$disable_lv" != "1" ]]; then
+  echo "WB_DISABLE_LIBRARY_VALIDATION は 0 か 1 で指定してください: $disable_lv" >&2
+  exit 1
+fi
+if [[ "$disable_lv" == "1" && -z "$identity" ]]; then
+  echo "WB_DISABLE_LIBRARY_VALIDATION=1 は WB_SIGN_IDENTITY（Developer ID 署名）と併用したときだけ使えます。" >&2
+  exit 1
+fi
 
 # 証明書はビルドを始める前に確かめる（見つからないなら時間をかけてビルドしない）
 if [[ -n "$identity" ]] && ! security find-identity -v -p codesigning | grep -qF "$identity"; then
@@ -34,10 +48,10 @@ fi
 ./scripts/fetch-lame.sh
 
 echo "==> swift build ($config, arm64)"
-swift build -c "$config" --arch arm64 --product WhisperBatch
+swift build -c "$config" --arch arm64 --product Sona
 bin_dir="$(swift build -c "$config" --arch arm64 --show-bin-path)"
 
-exe="$bin_dir/WhisperBatch"
+exe="$bin_dir/Sona"
 framework="$bin_dir/whisper.framework"
 lame="$bin_dir/libLAME.dylib"
 sherpa="$bin_dir/libsherpa-onnx-c-api.dylib"
@@ -50,7 +64,7 @@ echo "==> $app を作成"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Frameworks" "$app/Contents/Resources"
 cp "App/Info.plist" "$app/Contents/Info.plist"
-cp "$exe" "$app/Contents/MacOS/WhisperBatch"
+cp "$exe" "$app/Contents/MacOS/Sona"
 # シンボリックリンク構造を保ったままコピーする
 ditto "$framework" "$app/Contents/Frameworks/whisper.framework"
 # LAME は LGPL のため、差し替えできるよう動的ライブラリのまま同梱する
@@ -67,8 +81,8 @@ for fw_bin in "$app/Contents/Frameworks/whisper.framework/Versions/A/whisper" "$
 done
 
 # アプリ内の Frameworks を参照できるようにする
-if ! otool -l "$app/Contents/MacOS/WhisperBatch" | grep -q "@executable_path/../Frameworks"; then
-  install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/WhisperBatch"
+if ! otool -l "$app/Contents/MacOS/Sona" | grep -q "@executable_path/../Frameworks"; then
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/Sona"
 fi
 
 cp "App/ThirdPartyNotices.txt" "$app/Contents/Resources/ThirdPartyNotices.txt"
@@ -84,7 +98,7 @@ fi
 
 # デバッグ用の参照情報（ソースやオブジェクトファイルの絶対パスを含む）を取り除く。
 # 残すとビルドした Mac のユーザー名やフォルダ構成が配布物に含まれてしまう。
-strip -S -x "$app/Contents/MacOS/WhisperBatch"
+strip -S -x "$app/Contents/MacOS/Sona"
 strip -S -x "$app/Contents/Frameworks/libLAME.dylib"
 
 # 同梱ライブラリを先に、アプリ本体を最後に署名する
@@ -97,8 +111,9 @@ entitlements="App/WhisperBatch.entitlements"
 
 if [[ -n "$identity" ]]; then
   echo "==> Developer ID 署名（Hardened Runtime・App Sandbox 有効）: $identity"
-  if [[ "${WB_DISABLE_LIBRARY_VALIDATION:-0}" == "1" ]]; then
-    echo "    ライブラリ検証を無効にします（com.apple.security.cs.disable-library-validation）"
+  if [[ "$disable_lv" == "1" ]]; then
+    echo "    注意: ライブラリ検証を無効にします（com.apple.security.cs.disable-library-validation）。" >&2
+    echo "          Apple・同じ Team ID 以外が署名したライブラリも読み込めるようになります。通常の配布では使いません。" >&2
     sign_tmp="$(mktemp -d)"
     trap 'rm -rf "$sign_tmp"' EXIT
     cp "$entitlements" "$sign_tmp/WhisperBatch.entitlements"
@@ -115,6 +130,17 @@ for item in "${nested[@]}"; do
 done
 "${sign[@]}" --entitlements "$entitlements" "$app"
 codesign --verify --strict --deep --verbose=1 "$app"
+# ライブラリ検証の例外は、指定したときだけ付いていること
+app_entitlements="$(codesign --display --entitlements - --xml "$app" 2>/dev/null)"
+if [[ "$app_entitlements" == *com.apple.security.cs.disable-library-validation* ]]; then
+  has_lv_exception=1
+else
+  has_lv_exception=0
+fi
+if [[ "$has_lv_exception" != "$disable_lv" ]]; then
+  echo "署名の entitlements が想定と違います（disable-library-validation: 指定 $disable_lv / 実際 $has_lv_exception）" >&2
+  exit 1
+fi
 if [[ -n "$identity" ]]; then
   # Hardened Runtime が付いているか確認する（公証の必須条件）
   codesign --display --verbose=2 "$app" 2>&1 | grep -q "flags=.*runtime" || {
@@ -124,4 +150,4 @@ if [[ -n "$identity" ]]; then
 fi
 
 echo "==> 完了: $app"
-lipo -archs "$app/Contents/MacOS/WhisperBatch"
+lipo -archs "$app/Contents/MacOS/Sona"

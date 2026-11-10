@@ -18,11 +18,11 @@ let sherpaOnnxFramework = Target.binaryTarget(
 )
 
 let package = Package(
-    name: "WhisperBatch",
+    name: "Sona",
     defaultLocalization: "ja",
     platforms: [.macOS("27.0")],
     products: [
-        .executable(name: "WhisperBatch", targets: ["WhisperBatch"]),
+        .executable(name: "Sona", targets: ["WhisperBatch"]),
     ],
     dependencies: [
         // MP3 エンコーダー（LGPL）。ソースは scripts/fetch-lame.sh で取得する。

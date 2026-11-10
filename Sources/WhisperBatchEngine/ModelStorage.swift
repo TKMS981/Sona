@@ -1,5 +1,7 @@
 import CryptoKit
+import Darwin
 import Foundation
+import Synchronization
 import WhisperBatchCore
 
 /// モデルファイルの保存場所と、取得済みかどうかの判定
@@ -35,7 +37,8 @@ public struct ModelStorage: Sendable {
         directory(for: model).appendingPathComponent(file.name + ".download")
     }
 
-    /// ファイルが揃っているか（あり、サイズが一致する）。内容の検証はダウンロード直後に SHA-256 で行う。
+    /// ファイルが揃っているか（あり、サイズが一致する）。内容は、ダウンロード直後と、読み込む直前
+    /// （`verifyContents(of:)`）に SHA-256 で確かめる。
     public func isInstalled(_ file: ModelFile, of model: SpeechModel) -> Bool {
         let path = fileURL(for: file, of: model).path
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
@@ -71,6 +74,37 @@ public struct ModelStorage: Sendable {
         return values?.volumeAvailableCapacityForImportantUsage
     }
 
+    /// 読み込む前に、モデルのファイルの内容がカタログの SHA-256 と一致するかを確かめる。
+    ///
+    /// 同じプロセスの中で一度確かめたファイルは、ファイルの同一性（デバイス・inode・サイズ・更新時刻・状態変更時刻）が
+    /// 変わらない限り確かめ直さない。内容の書き換え、別のファイルへの置き換え、属性の変更（状態変更時刻は
+    /// 利用者のプログラムからは戻せない）のどれでも確かめ直す。結果はディスクに保存しない
+    /// （保存すると、モデルを書き換えられる者がその記録も書き換えられるため）。
+    /// 確かめてから whisper.cpp などが読み込むまでの間の置き換えは検出できない。
+    public func verifyContents(of model: SpeechModel) async throws {
+        for file in model.files {
+            let url = fileURL(for: file, of: model)
+            guard let before = FileIdentity(path: url.path) else {
+                throw WhisperBatchError.modelNotInstalled(modelName: model.displayName)
+            }
+            if VerifiedModelFiles.shared.isVerified(path: url.path, identity: before, sha256: file.sha256) { continue }
+            let digest: String
+            do {
+                digest = try await Self.sha256(of: url)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw WhisperBatchError.modelLoadFailed(modelName: model.displayName)
+            }
+            // 計算している間に変わったものは、確かめられたとはいえない
+            guard digest == file.sha256, FileIdentity(path: url.path) == before else {
+                VerifiedModelFiles.shared.forget(path: url.path)
+                throw WhisperBatchError.modelFileModified(modelName: model.displayName)
+            }
+            VerifiedModelFiles.shared.remember(path: url.path, identity: before, sha256: file.sha256)
+        }
+    }
+
     /// SHA-256 をファイルを少しずつ読みながら計算する
     @concurrent
     static func sha256(of url: URL) async throws -> String {
@@ -84,5 +118,54 @@ public struct ModelStorage: Sendable {
             hasher.update(data: data)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// ファイルの同一性。どれかが変われば、内容が変わった可能性があるとみなす。
+struct FileIdentity: Equatable, Sendable {
+    var device: Int64
+    var inode: UInt64
+    var size: Int64
+    var modified: timespec
+    var changed: timespec
+
+    init?(path: String) {
+        var s = stat()
+        guard stat(path, &s) == 0, (s.st_mode & S_IFMT) == S_IFREG else { return nil }
+        device = Int64(s.st_dev)
+        inode = UInt64(s.st_ino)
+        size = Int64(s.st_size)
+        modified = s.st_mtimespec
+        changed = s.st_ctimespec
+    }
+
+    static func == (a: FileIdentity, b: FileIdentity) -> Bool {
+        a.device == b.device && a.inode == b.inode && a.size == b.size
+            && a.modified.tv_sec == b.modified.tv_sec && a.modified.tv_nsec == b.modified.tv_nsec
+            && a.changed.tv_sec == b.changed.tv_sec && a.changed.tv_nsec == b.changed.tv_nsec
+    }
+}
+
+/// このプロセスで内容を確かめたモデルのファイル（メモリーの中だけに持つ）
+final class VerifiedModelFiles: Sendable {
+    static let shared = VerifiedModelFiles()
+
+    private struct Entry {
+        var identity: FileIdentity
+        var sha256: String
+    }
+
+    private let entries = Mutex<[String: Entry]>([:])
+
+    func isVerified(path: String, identity: FileIdentity, sha256: String) -> Bool {
+        entries.withLock { $0[path].map { $0.identity == identity && $0.sha256 == sha256 } ?? false }
+    }
+
+    func remember(path: String, identity: FileIdentity, sha256: String) {
+        entries.withLock { $0[path] = Entry(identity: identity, sha256: sha256) }
+    }
+
+    func forget(path: String) {
+        _ = entries.withLock { $0.removeValue(forKey: path) }
     }
 }

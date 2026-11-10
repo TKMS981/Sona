@@ -16,9 +16,37 @@ enum ExportService {
 
     static func exportSingle(_ item: QueueItem, format: ExportFormat, includeTimestamps: Bool) async -> Outcome {
         guard let transcript = item.transcript else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
+        return await export(transcript, suggestedName: ExportNaming.baseName(for: item.displayName, format: format),
+                            format: format, includeTimestamps: includeTimestamps)
+    }
+
+    // MARK: ライブ文字起こし
+
+    /// ライブ文字起こしの結果を書き出す（形式は一括処理の結果と同じ）
+    static func exportLive(_ transcript: Transcript, startedAt: Date?, format: ExportFormat, includeTimestamps: Bool) async -> Outcome {
+        guard !transcript.segments.isEmpty else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
+        let name = ExportNaming.liveFileName(date: startedAt ?? Date()) + "." + format.fileExtension
+        return await export(transcript, suggestedName: name, format: format, includeTimestamps: includeTimestamps)
+    }
+
+    /// ライブ文字起こしの音声（WAV）の保存先を選ぶ。キャンセルなら nil。
+    static func chooseLiveAudioDestination(startedAt: Date?) async -> URL? {
+        let panel = NSSavePanel()
+        panel.title = L("live.audio.panelTitle")
+        panel.message = L("live.audio.panelMessage")
+        panel.nameFieldStringValue = ExportNaming.liveFileName(date: startedAt ?? Date()) + ".wav"
+        panel.allowedContentTypes = [.wav]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        guard await run(panel) == .OK else { return nil }
+        return panel.url
+    }
+
+    private static func export(_ transcript: Transcript, suggestedName: String, format: ExportFormat,
+                               includeTimestamps: Bool) async -> Outcome {
         let panel = NSSavePanel()
         panel.title = L("export.single.panelTitle")
-        panel.nameFieldStringValue = ExportNaming.baseName(for: item.displayName, format: format)
+        panel.nameFieldStringValue = suggestedName
         panel.allowedContentTypes = [contentType(for: format)]
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false

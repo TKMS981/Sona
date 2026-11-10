@@ -24,6 +24,8 @@ public enum WhisperBatchError: Error, Equatable, Sendable {
     /// 許可していない接続先（Hugging Face 以外）へ接続しようとした
     case untrustedDownloadHost(host: String)
     case checksumMismatch(modelName: String)
+    /// 取得済みのモデルの内容が、カタログの SHA-256 と一致しない（取得後に変更された・壊れた）
+    case modelFileModified(modelName: String)
     case languageNotSupported(modelName: String, language: String)
     case speechRecognitionUnavailable
 
@@ -83,6 +85,8 @@ extension WhisperBatchError: LocalizedError {
             return L("error.untrustedDownloadHost", host)
         case .checksumMismatch(let modelName):
             return L("error.checksumMismatch", modelName)
+        case .modelFileModified(let modelName):
+            return L("error.modelFileModified", modelName)
         case .languageNotSupported(let modelName, let language):
             return L("error.languageNotSupported", modelName, language)
         case .speechRecognitionUnavailable:

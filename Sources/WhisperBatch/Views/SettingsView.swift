@@ -1,9 +1,9 @@
 import SwiftUI
 import WhisperBatchCore
 
-/// 設定画面（⌘,）: 一般（表示言語・自動開始・Whisper の探索方式）、フォント、テーマ
+/// 設定画面（⌘,）: 一般（表示言語・自動開始・Whisper の探索方式）、ライブ文字起こし、フォント、テーマ
 struct SettingsView: View {
-    private enum Tab: Hashable { case general, font, theme }
+    private enum Tab: Hashable { case general, live, font, theme }
     @ViewState private var tab = Tab.general
 
     var body: some View {
@@ -11,6 +11,9 @@ struct SettingsView: View {
             GeneralSettingsTab()
                 .tabItem { Label(L("settings.tab.general"), systemImage: "gearshape") }
                 .tag(Tab.general)
+            LiveSettingsTab()
+                .tabItem { Label(L("settings.tab.live"), systemImage: "waveform.badge.mic") }
+                .tag(Tab.live)
             FontSettingsTab()
                 .tabItem { Label(L("settings.tab.font"), systemImage: "textformat") }
                 .tag(Tab.font)
@@ -77,6 +80,71 @@ private struct GeneralSettingsTab: View {
             }
         }
         .padding(20)
+    }
+}
+
+// MARK: - ライブ文字起こし
+
+/// ゴーストモードと、取り込み中だけ使えるショートカット
+private struct LiveSettingsTab: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var showGhostConfirmation = false
+
+    var body: some View {
+        let live = model.live
+        Form {
+            Section {
+                LabeledContent(L("settings.ghost")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(L("settings.ghost.toggle"), isOn: Binding(
+                            get: { model.settings.ghostMode },
+                            set: { on in
+                                // 有効にするのは、説明を読んで確認したときだけ
+                                if on { showGhostConfirmation = true } else { live.disableGhostMode() }
+                            }
+                        ))
+                        .toggleStyle(.checkbox)
+                        SettingNote(text: L("settings.ghost.note"))
+                    }
+                }
+            }
+            Section {
+                LabeledContent(L("settings.live.stopShortcut")) {
+                    Picker(L("settings.live.stopShortcut"), selection: Binding(
+                        get: { model.settings.liveStopShortcut },
+                        set: { model.settings.liveStopShortcut = $0; live.updateHotKeys() }
+                    )) {
+                        ForEach(LiveShortcut.stopChoices) { Text($0.symbol ?? L("settings.live.shortcutOff")).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 160)
+                }
+                .padding(.top, 10)
+                LabeledContent(L("settings.live.showShortcut")) {
+                    Picker(L("settings.live.showShortcut"), selection: Binding(
+                        get: { model.settings.liveShowShortcut },
+                        set: { model.settings.liveShowShortcut = $0; live.updateHotKeys() }
+                    )) {
+                        ForEach(LiveShortcut.showChoices) { Text($0.symbol ?? L("settings.live.shortcutOff")).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 160)
+                }
+                SettingNote(text: L("settings.live.shortcut.note"))
+                if !live.failedShortcuts.isEmpty {
+                    Label(L("settings.live.shortcut.failed"), systemImage: "exclamationmark.triangle")
+                        .appFont(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .padding(20)
+        .alert(L("settings.ghost.confirm.title"), isPresented: $showGhostConfirmation) {
+            Button(L("settings.ghost.confirm.enable")) { live.enableGhostMode() }
+            Button(L("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(L("settings.ghost.confirm.message"))
+        }
     }
 }
 

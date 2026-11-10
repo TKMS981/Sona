@@ -85,6 +85,28 @@ public enum ModelDownloader {
         progress: @escaping @Sendable (Int64, Int64) -> Void,
         verifying: @escaping @Sendable () -> Void
     ) async throws(ModelDownloadInterruption) {
+        try await download(model, into: storage, resumeData: resumeData, progress: progress, verifying: verifying,
+                           configuration: { defaultConfiguration() })
+    }
+
+    /// 通信の設定。キャッシュを使わない（取得した内容をディスクのキャッシュに残さない）。
+    static func defaultConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.default
+        config.urlCache = nil
+        config.timeoutIntervalForRequest = 60
+        return config
+    }
+
+    /// `configuration` はテストで差し替える
+    @concurrent
+    static func download(
+        _ model: SpeechModel,
+        into storage: ModelStorage,
+        resumeData: Data?,
+        progress: @escaping @Sendable (Int64, Int64) -> Void,
+        verifying: @escaping @Sendable () -> Void,
+        configuration: @escaping @Sendable () -> URLSessionConfiguration
+    ) async throws(ModelDownloadInterruption) {
         do {
             try FileManager.default.createDirectory(at: storage.directory(for: model), withIntermediateDirectories: true)
         } catch {
@@ -106,7 +128,7 @@ public enum ModelDownloader {
             let offset = done
             try await downloadFile(file, of: model, into: storage, resumeData: resume,
                                    progress: { received, _ in progress(offset + received, total) },
-                                   verifying: verifying)
+                                   verifying: verifying, configuration: configuration)
             resume = nil
             done += file.sizeBytes
             progress(done, total)
@@ -119,17 +141,17 @@ public enum ModelDownloader {
         into storage: ModelStorage,
         resumeData: Data?,
         progress: @escaping @Sendable (Int64, Int64) -> Void,
-        verifying: @escaping @Sendable () -> Void
+        verifying: @escaping @Sendable () -> Void,
+        configuration: @Sendable () -> URLSessionConfiguration
     ) async throws(ModelDownloadInterruption) {
         guard ModelDownloadHosts.isAllowed(file.url) else {
             throw .init(reason: .failed(.untrustedDownloadHost(host: ModelDownloadHosts.displayHost(file.url))), resumeData: nil)
         }
         let partial = storage.partialURL(for: file, of: model)
+        // 検証前のファイル（前回の残り）は使わない。以降、失敗・中止のときも残さない
+        removePartial(partial)
         let delegate = DownloadDelegate(destination: partial, expectedSize: file.sizeBytes, progress: progress)
-        let config = URLSessionConfiguration.default
-        config.urlCache = nil
-        config.timeoutIntervalForRequest = 60
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: configuration(), delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
 
         do {
@@ -147,9 +169,22 @@ public enum ModelDownloader {
                 delegate.cancel()
             }
         } catch let e as ModelDownloadInterruption {
+            removePartial(partial)
             throw e
         } catch {
-            throw .init(reason: .cancelled, resumeData: nil)
+            removePartial(partial)
+            // ここに来るのは想定外のエラーだけ。利用者が止めたのでなければ失敗として伝える
+            if error is CancellationError || Task.isCancelled { throw .init(reason: .cancelled, resumeData: nil) }
+            throw .init(reason: .failed(.downloadFailed(detail: (error as NSError).localizedDescription)), resumeData: nil)
+        }
+
+        // 大きさの確認（ハッシュの計算と、保存先への移動の前に）
+        let actualSize = (try? FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? NSNumber)?.int64Value
+        guard actualSize == file.sizeBytes else {
+            removePartial(partial)
+            throw .init(reason: .failed(.downloadFailed(detail: L("download.detail.sizeMismatch",
+                                                                  byteText(actualSize ?? 0), byteText(file.sizeBytes)))),
+                        resumeData: nil)
         }
 
         // 内容の検証
@@ -176,10 +211,49 @@ public enum ModelDownloader {
             }
             try FileManager.default.moveItem(at: partial, to: final)
         } catch {
+            removePartial(partial)
             throw .init(reason: .failed(ErrorMapper.map(error, during: .downloading)
                     ?? .downloadFailed(detail: L("download.detail.cannotSave", error.localizedDescription))),
                         resumeData: nil)
         }
+    }
+
+    private static func removePartial(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    static func byteText(_ bytes: Int64) -> String {
+        "\(bytes.formatted(.number.grouping(.automatic))) B"
+    }
+}
+
+/// 受信量がカタログの大きさを超えていないかを確かめる。
+///
+/// 再開したダウンロードでは、`didWriteData` の `totalBytesWritten` が再開位置を含むかどうかに頼らず、
+/// 再開位置（`didResumeAtOffset`）と今回受け取った量の合計を使う（`totalBytesWritten` のほうが大きければそちら）。
+/// 応答が宣言する大きさは、再開時に全体か残りかが分からないので、上限より大きい場合だけ拒否する。
+struct DownloadSizeLimit: Sendable {
+    let limit: Int64
+    private(set) var resumeOffset: Int64 = 0
+    private(set) var receivedThisRun: Int64 = 0
+
+    init(limit: Int64) {
+        self.limit = limit
+    }
+
+    /// 再開した。超えていれば false。
+    mutating func resumed(at offset: Int64, expectedTotal: Int64) -> Bool {
+        resumeOffset = max(offset, 0)
+        receivedThisRun = 0
+        return resumeOffset <= limit && expectedTotal <= limit
+    }
+
+    /// 受け取った。全体の受信量と、上限内かどうかを返す。
+    mutating func record(bytesWritten: Int64, totalBytesWritten: Int64,
+                         totalBytesExpected: Int64) -> (received: Int64, withinLimit: Bool) {
+        receivedThisRun += max(bytesWritten, 0)
+        let received = max(resumeOffset + receivedThisRun, totalBytesWritten)
+        return (received, received <= limit && totalBytesExpected <= limit)
     }
 }
 
@@ -189,17 +263,19 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         var task: URLSessionDownloadTask?
         var cancelled = false
         var finishError: WhisperBatchError?
+        var sizeLimit: DownloadSizeLimit
     }
 
     private let destination: URL
     private let expectedSize: Int64
     private let progress: @Sendable (Int64, Int64) -> Void
-    private let state = Mutex(State())
+    private let state: Mutex<State>
 
     init(destination: URL, expectedSize: Int64, progress: @escaping @Sendable (Int64, Int64) -> Void) {
         self.destination = destination
         self.expectedSize = expectedSize
         self.progress = progress
+        state = Mutex(State(sizeLimit: DownloadSizeLimit(limit: expectedSize)))
     }
 
     func setContinuation(_ c: CheckedContinuation<Void, any Error>) {
@@ -222,10 +298,42 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         task?.cancel()
     }
 
+    /// こちらで決めた理由で中止する（利用者の中止とは区別する）。最初の理由を残す。
+    private func fail(_ error: WhisperBatchError, task: URLSessionTask) {
+        state.withLock { s in
+            if s.finishError == nil { s.finishError = error }
+        }
+        task.cancel()
+    }
+
+    private var tooLarge: WhisperBatchError {
+        .downloadFailed(detail: L("download.detail.tooLarge", ModelDownloader.byteText(expectedSize)))
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didResumeAtOffset fileOffset: Int64,
+                    expectedTotalBytes: Int64) {
+        let ok = state.withLock { $0.sizeLimit.resumed(at: fileOffset, expectedTotal: expectedTotalBytes) }
+        if !ok { fail(tooLarge, task: downloadTask) }
+    }
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expectedSize
-        progress(totalBytesWritten, total)
+        if state.withLock({ $0.finishError != nil }) { return }
+        // エラーの応答（HTML のページなど）は受け取り続けない
+        if let http = downloadTask.response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+            fail(.downloadHTTPError(statusCode: http.statusCode), task: downloadTask)
+            return
+        }
+        let (received, withinLimit) = state.withLock {
+            $0.sizeLimit.record(bytesWritten: bytesWritten, totalBytesWritten: totalBytesWritten,
+                                totalBytesExpected: totalBytesExpectedToWrite)
+        }
+        guard withinLimit else {
+            // カタログの大きさを超えたら、残りを受け取らずに止める
+            fail(tooLarge, task: downloadTask)
+            return
+        }
+        progress(received, expectedSize)
     }
 
     /// リダイレクト先が許可した接続先でなければ、たどらずに失敗にする

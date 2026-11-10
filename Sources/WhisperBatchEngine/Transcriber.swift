@@ -23,11 +23,13 @@ public enum TranscriberLoader {
             guard let storage, let file = model.files.first, storage.isInstalled(model) else {
                 throw WhisperBatchError.modelNotInstalled(modelName: model.displayName)
             }
+            try await storage.verifyContents(of: model)
             return try await WhisperContext.load(model: model, fileURL: storage.fileURL(for: file, of: model))
         case .reazonSpeech:
             guard let storage, storage.isInstalled(model) else {
                 throw WhisperBatchError.modelNotInstalled(modelName: model.displayName)
             }
+            try await storage.verifyContents(of: model)
             return try await ReazonSpeechContext.load(model: model, directory: storage.directory(for: model))
         case .apple:
             return try await AppleSpeechTranscriber.make(model: model, language: language)

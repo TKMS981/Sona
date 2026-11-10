@@ -49,8 +49,8 @@ func render(scale: Int) -> Data {
         NSString(string: text).draw(in: NSRect(x: 0, y: y, width: CGFloat(width), height: size * 1.6),
                                     withAttributes: attrs)
     }
-    draw("Whisper Batch を Applications フォルダへドラッグしてください", y: 72, size: 14, alpha: 0.9)
-    draw("Drag Whisper Batch to the Applications folder to install", y: 48, size: 12, alpha: 0.6)
+    draw("Sona を Applications フォルダへドラッグしてください", y: 72, size: 14, alpha: 0.9)
+    draw("Drag Sona to the Applications folder to install", y: 48, size: 12, alpha: 0.6)
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

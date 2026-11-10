@@ -1,4 +1,4 @@
-Whisper Batch — サードパーティのライセンス表記
+Sona — サードパーティのライセンス表記
 ================================================
 
 ■ whisper.cpp / ggml（アプリに同梱: whisper.framework, v1.9.5 / build b5454）

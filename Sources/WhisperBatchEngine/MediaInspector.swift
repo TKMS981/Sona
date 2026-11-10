@@ -34,24 +34,26 @@ public enum MediaInspector {
     }
 }
 
-/// 変換用の一時 MP3 を置くフォルダ（アプリの一時フォルダ内）。
-/// 一時ファイルは処理が終わると削除し、アプリ起動時にも残っていれば削除する。
+/// 変換用の一時 MP3 を置くフォルダ（プロセスごとのフォルダ。`TemporaryWorkspace` を参照）。
+/// 一時ファイルは処理が終わると削除し、異常終了で残ったものは次回の起動時に削除する。
 public enum ConversionWorkspace {
-    public static var directory: URL {
-        FileManager.default.temporaryDirectory.appendingPathComponent("WhisperBatch-Conversions", isDirectory: true)
-    }
+    static var workspace: TemporaryWorkspace { .conversions }
 
     public static func makeTemporaryMP3URL() throws -> URL {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent(UUID().uuidString + ".mp3")
+        try workspace.makeFile(prefix: "", pathExtension: "mp3")
     }
 
-    /// 前回の異常終了などで残った一時ファイルを削除する
-    public static func removeLeftovers() {
-        try? FileManager.default.removeItem(at: directory)
+    /// 起動時: 終了したプロセス（異常終了を含む）が残した一時ファイルだけを消す
+    public static func removeAbandonedFiles() {
+        workspace.removeAbandoned()
+    }
+
+    /// 終了時: このプロセスの一時ファイルを消す（ほかのプロセスのものは消さない）
+    public static func removeOwnFiles() {
+        workspace.removeOwnFiles()
     }
 
     public static func remove(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
+        workspace.remove(url)
     }
 }

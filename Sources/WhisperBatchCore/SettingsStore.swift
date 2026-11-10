@@ -26,7 +26,7 @@ public enum LanguagePreference: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// 利用者の設定（文字起こしの言語・モデル・Whisper の探索方式・表示言語・自動開始）を UserDefaults に保存する。
+/// 利用者の設定（文字起こしの言語・モデル・Whisper の探索方式・表示言語・自動開始・ライブ文字起こし）を UserDefaults に保存する。
 ///
 /// 値を変えるとすぐに保存する。値の変化に応じた画面側の処理（表示言語の切り替えなど）は持たない。
 @MainActor
@@ -62,6 +62,39 @@ public final class SettingsStore {
         didSet { defaults.set(whisperDecoding.rawValue, forKey: Keys.whisperDecoding) }
     }
 
+    /// ゴーストモード: ライブ文字起こし中に、このアプリ自身の録音表示（メニューバーの表示）を出さず、
+    /// ウインドウを隠せるようにする。既定はオフ。利用者が説明を読んで有効にしたときだけオンになる。
+    /// OS が表示する収録中の表示やプライバシーの表示には影響しない。
+    public var ghostMode: Bool {
+        didSet { defaults.set(ghostMode, forKey: Keys.ghostMode) }
+    }
+
+    /// ライブ文字起こしを停止するショートカット（取り込み中だけ有効）
+    public var liveStopShortcut: LiveShortcut {
+        didSet { defaults.set(liveStopShortcut.rawValue, forKey: Keys.liveStopShortcut) }
+    }
+
+    /// 隠したウインドウを表示に戻すショートカット（取り込み中だけ有効）
+    public var liveShowShortcut: LiveShortcut {
+        didSet { defaults.set(liveShowShortcut.rawValue, forKey: Keys.liveShowShortcut) }
+    }
+
+    /// ライブ文字起こしに使う Whisper のモデル
+    public var liveModelID: String {
+        didSet { defaults.set(liveModelID, forKey: Keys.liveModel) }
+    }
+
+    /// ライブ文字起こしの語彙のヒント（固有名詞・専門用語など。認識の手がかりとして Whisper に渡す）。
+    /// この Mac の設定にだけ保存し、外部へは送らない。`LivePromptBuilder.hintLimit` 文字まで。
+    public var liveVocabularyHint: String {
+        didSet {
+            if liveVocabularyHint.count > LivePromptBuilder.hintLimit {
+                liveVocabularyHint = String(liveVocabularyHint.prefix(LivePromptBuilder.hintLimit))
+            }
+            defaults.set(liveVocabularyHint, forKey: Keys.liveVocabularyHint)
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     enum Keys {
@@ -71,6 +104,11 @@ public final class SettingsStore {
         static let appLanguage = "appLanguage"
         static let autoStartOnAdd = "autoStartOnAdd"
         static let whisperDecoding = "whisperDecoding"
+        static let ghostMode = "ghostMode"
+        static let liveStopShortcut = "liveStopShortcut"
+        static let liveShowShortcut = "liveShowShortcut"
+        static let liveModel = "liveModelID"
+        static let liveVocabularyHint = "liveVocabularyHint"
         /// AppKit が読む、このアプリだけの言語指定（標準メニューやパネルの言語。次回起動時に反映）
         static let appleLanguages = "AppleLanguages"
     }
@@ -84,6 +122,21 @@ public final class SettingsStore {
         languagePreference = defaults.string(forKey: Keys.appLanguage).flatMap(LanguagePreference.init(rawValue:)) ?? .system
         autoStartOnAdd = defaults.bool(forKey: Keys.autoStartOnAdd)
         whisperDecoding = defaults.string(forKey: Keys.whisperDecoding).flatMap(WhisperDecoding.init(rawValue:)) ?? .default
+        ghostMode = defaults.bool(forKey: Keys.ghostMode)
+        liveStopShortcut = defaults.string(forKey: Keys.liveStopShortcut).flatMap(LiveShortcut.init(rawValue:))
+            .flatMap { LiveShortcut.stopChoices.contains($0) ? $0 : nil } ?? LiveShortcut.defaultStop
+        liveShowShortcut = defaults.string(forKey: Keys.liveShowShortcut).flatMap(LiveShortcut.init(rawValue:))
+            .flatMap { LiveShortcut.showChoices.contains($0) ? $0 : nil } ?? LiveShortcut.defaultShow
+        liveModelID = defaults.string(forKey: Keys.liveModel)
+            .flatMap { ModelCatalog.model(id: $0) }
+            .flatMap { $0.engine == .whisper ? $0.id : nil }
+            ?? ModelCatalog.defaultModel(for: .whisper).id
+        liveVocabularyHint = String((defaults.string(forKey: Keys.liveVocabularyHint) ?? "").prefix(LivePromptBuilder.hintLimit))
+    }
+
+    /// ライブ文字起こしに使うモデル（Whisper だけ）
+    public var liveModel: SpeechModel {
+        ModelCatalog.model(id: liveModelID).flatMap { $0.engine == .whisper ? $0 : nil } ?? ModelCatalog.defaultModel(for: .whisper)
     }
 
     public var selectedModel: SpeechModel {

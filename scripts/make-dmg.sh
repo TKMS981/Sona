@@ -2,9 +2,9 @@
 # 配布用のディスクイメージ（DMG）を作る。
 #
 #   ./scripts/make-dmg.sh             # アプリをビルドしてから DMG を作成
-#   ./scripts/make-dmg.sh --no-build  # build/Whisper Batch.app をそのまま使う
+#   ./scripts/make-dmg.sh --no-build  # build/Sona.app をそのまま使う
 #
-# 出力: build/WhisperBatch-<バージョン>.dmg と、その SHA-256（.sha256）
+# 出力: build/Sona-<バージョン>.dmg と、その SHA-256（.sha256）
 # 初回は dmgbuild（PyPI）を .build/dmg-venv に取得する。
 # DMG を開くとアプリと「アプリケーション」フォルダへのリンクが並び、ドラッグでインストールできる。
 #
@@ -14,7 +14,10 @@
 #                     公証の結果（チケット）を両方に添付（staple）する。WB_SIGN_IDENTITY が必要。
 #                     プロファイルは事前に作っておく:
 #                       xcrun notarytool store-credentials <名前> --apple-id <Apple ID> --team-id <Team ID>
-#   例: WB_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" WB_NOTARY_PROFILE=whisper-batch ./scripts/make-dmg.sh
+#   例: WB_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" WB_NOTARY_PROFILE=sona ./scripts/make-dmg.sh
+#
+# アプリに com.apple.security.cs.disable-library-validation が付いている場合は、同じコマンドで
+# WB_DISABLE_LIBRARY_VALIDATION=1 を明示していなければ中止する（--no-build で別のビルドを使った場合も含む）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -48,7 +51,7 @@ notarize() {
   echo "    受け付けられました（ID: $submission_id）"
 }
 
-app_name="Whisper Batch"
+app_name="Sona"
 app="build/$app_name.app"
 
 if [[ "${1:-}" != "--no-build" ]]; then
@@ -56,6 +59,13 @@ if [[ "${1:-}" != "--no-build" ]]; then
 fi
 [[ -d "$app" ]] || { echo "アプリが見つかりません: $app" >&2; exit 1; }
 codesign --verify --strict --deep "$app"
+app_entitlements="$(codesign --display --entitlements - --xml "$app" 2>/dev/null)"
+if [[ "$app_entitlements" == *com.apple.security.cs.disable-library-validation* \
+      && "${WB_DISABLE_LIBRARY_VALIDATION:-0}" != "1" ]]; then
+  echo "アプリにライブラリ検証の例外（disable-library-validation）が付いています。通常の配布では使いません。" >&2
+  echo "意図して配布する場合だけ、WB_DISABLE_LIBRARY_VALIDATION=1 を明示してください。" >&2
+  exit 1
+fi
 if [[ -n "$identity" ]]; then
   # --no-build のときに、別の証明書やアドホック署名のアプリを使っていないか確認する
   codesign --display --verbose=2 "$app" 2>&1 | grep -qF "Authority=$identity" || {
@@ -65,7 +75,7 @@ if [[ -n "$identity" ]]; then
 fi
 
 version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
-dmg="build/WhisperBatch-$version.dmg"
+dmg="build/Sona-$version.dmg"
 volname="$app_name $version"
 
 # 配布物にビルドした Mac のホームディレクトリのパスが残っていないか確認する

@@ -82,6 +82,8 @@ final class AppModel {
     let settings: SettingsStore
     let transcription: TranscriptionService
     let models: ModelManager
+    /// ライブ文字起こし
+    let live: LiveController
     /// 書体とテーマ
     let appearance = AppearanceSettings()
 
@@ -123,11 +125,15 @@ final class AppModel {
         self.settings = settings
         self.models = models
         transcription = TranscriptionService(storage: models.storage)
+        live = LiveController(settings: settings, models: models)
         appLanguage = settings.languagePreference.resolved
         Localizer.shared.setLanguage(appLanguage)
         models.transcriptionLanguage = settings.language
-        // 前回の異常終了などで残った変換用の一時ファイルを消す
-        ConversionWorkspace.removeLeftovers()
+        // 前回の異常終了などで残った変換用・ライブ文字起こし用の一時ファイルを消す
+        // （終了したプロセスのものだけ。同時に動いている別のコピーのファイルは消さない）
+        ConversionWorkspace.removeAbandonedFiles()
+        LiveRecordingWorkspace.removeAbandonedFiles()
+        live.isBatchRunning = { [weak self] in self?.isRunning ?? false }
     }
 
     /// 表示言語を切り替える（保存は SettingsStore が行う）
@@ -159,6 +165,7 @@ final class AppModel {
     /// 開始できない理由（開始できるなら nil）
     var startBlockReason: String? {
         if isRunning { return L("start.block.running") }
+        if live.isActive { return L("start.block.liveRunning") }
         if queue.items.isEmpty { return L("start.block.empty") }
         if !queue.hasPending { return L("start.block.noPending") }
         if selectedEngine == .apple, language == .auto { return L("start.block.appleNeedsLanguage") }
@@ -270,13 +277,14 @@ final class AppModel {
     func shutdown() async {
         models.cancelAllDownloads()
         transcription.cancel()
+        await live.shutdown()
         mp3ExportTasks.values.forEach { $0.cancel() }
         await transcription.waitUntilFinished()
         for task in mp3ExportTasks.values { await task.value }
-        ConversionWorkspace.removeLeftovers()
+        ConversionWorkspace.removeOwnFiles()
     }
 
-    var hasActiveWork: Bool { isRunning || !mp3ExportTasks.isEmpty }
+    var hasActiveWork: Bool { isRunning || !mp3ExportTasks.isEmpty || live.isActive }
 
     // MARK: 動画の音声を MP3 で保存（利用者が明示的に選んだときだけ）
 
