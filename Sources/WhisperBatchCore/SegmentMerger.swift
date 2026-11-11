@@ -17,12 +17,29 @@ public enum SegmentMerger {
         var result: [TranscriptSegment] = []
         var current: TranscriptSegment?
 
+        // 断片ごとの確からしさ（断片に値があるときだけ。語句としてつなげる）
+        var words: [TranscriptWord] = []
+        var hasConfidence = false
+
         func flush() {
             guard let segment = current else { return }
             current = nil
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            defer { words = []; hasConfidence = false }
             guard !text.isEmpty else { return }
-            result.append(TranscriptSegment(start: segment.start, end: max(segment.end, segment.start), text: text))
+            let confidence = hasConfidence ? TranscriptSegment.meanProbability(of: words) : nil
+            result.append(TranscriptSegment(start: segment.start, end: max(segment.end, segment.start), text: text,
+                                            confidence: confidence, words: confidence == nil ? nil : words))
+        }
+
+        func addWords(of piece: TranscriptSegment) {
+            if let pieceWords = piece.words {
+                words += pieceWords
+                hasConfidence = hasConfidence || pieceWords.contains { $0.probability != nil }
+            } else {
+                words.append(TranscriptWord(text: piece.text, probability: piece.confidence))
+                hasConfidence = hasConfidence || piece.confidence != nil
+            }
         }
 
         for piece in pieces {
@@ -33,9 +50,11 @@ public enum SegmentMerger {
                 // 区間の先頭の空白は落とす
                 guard !piece.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                 current = piece
+                addWords(of: piece)
             } else {
                 current!.text += piece.text
                 current!.end = max(current!.end, piece.end)
+                addWords(of: piece)
             }
             let trimmed = current!.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if let last = trimmed.last, sentenceEnders.contains(last) {

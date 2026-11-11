@@ -411,3 +411,76 @@ struct ThemeBackground: View {
         }
     }
 }
+
+// MARK: - 設定の書き出し・読み込み
+
+extension AppearanceSettings {
+    /// 書き出す内容（背景画像のファイルは含めない）
+    func snapshot() -> SettingsSnapshot.Appearance {
+        var a = SettingsSnapshot.Appearance()
+        a.fontFamily = fontFamily
+        a.fontSize = fontSize.rawValue
+        a.appearanceMode = appearanceMode.rawValue
+        a.backgroundStyle = backgroundStyle.rawValue
+        a.backgroundColor = backgroundColor.hexString
+        a.imageOpacity = imageOpacity
+        return a
+    }
+
+    /// 読み込んだ外観を反映する。この Mac にない書体・画像がない背景・範囲外の値は読み飛ばす。
+    func apply(_ a: SettingsSnapshot.Appearance) -> SettingsImportReport {
+        var report = SettingsImportReport()
+        func take<T>(_ value: T?, _ key: String, _ parse: (T) -> Bool) {
+            guard let value else { return }
+            if parse(value) { report.applied += 1 } else { report.skipped.append(key) }
+        }
+        take(a.fontFamily, "appearance.fontFamily") { family in
+            guard family.isEmpty || NSFontManager.shared.availableMembers(ofFontFamily: family) != nil else { return false }
+            fontFamily = family
+            return true
+        }
+        take(a.fontSize, "appearance.fontSize") { value in
+            guard let v = FontSizeOption(rawValue: value) else { return false }
+            fontSize = v
+            return true
+        }
+        take(a.appearanceMode, "appearance.appearanceMode") { value in
+            guard let v = AppearanceMode(rawValue: value) else { return false }
+            appearanceMode = v
+            return true
+        }
+        take(a.backgroundColor, "appearance.backgroundColor") { value in
+            guard let color = ThemeColor(hexString: value) else { return false }
+            backgroundColor = color
+            return true
+        }
+        take(a.imageOpacity, "appearance.imageOpacity") { value in
+            guard Self.imageOpacityRange.contains(value) else { return false }
+            imageOpacity = value
+            return true
+        }
+        take(a.backgroundStyle, "appearance.backgroundStyle") { value in
+            // 画像は書き出しに含めないので、この Mac に背景画像がなければ画像の背景にはしない
+            guard let v = BackgroundStyle(rawValue: value), v != .image || backgroundImage != nil else { return false }
+            backgroundStyle = v
+            return true
+        }
+        return report
+    }
+}
+
+extension ThemeColor {
+    /// #RRGGBBAA
+    var hexString: String {
+        let c = storage.map { Int((min(max($0, 0), 1) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X%02X", c[0], c[1], c[2], c[3])
+    }
+
+    init?(hexString: String) {
+        var s = hexString.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 8, let value = UInt32(s, radix: 16) else { return nil }
+        self.init(red: Double((value >> 24) & 0xFF) / 255, green: Double((value >> 16) & 0xFF) / 255,
+                  blue: Double((value >> 8) & 0xFF) / 255, alpha: Double(value & 0xFF) / 255)
+    }
+}

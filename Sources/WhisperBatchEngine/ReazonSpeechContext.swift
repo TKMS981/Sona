@@ -67,8 +67,9 @@ public final class ReazonSpeechContext: @unchecked Sendable {
         return ReazonSpeechContext(model: model, recognizer: recognizer, queue: queue)
     }
 
-    /// 1 区間（16kHz モノラル）を認識し、文字ごとの (文字列, 区間先頭からの秒) を返す
-    private func decode(_ samples: [Float]) async -> [(text: String, start: TimeInterval)] {
+    /// 1 区間（16kHz モノラル）を認識し、文字ごとの (文字列, 区間先頭からの秒, 確率) を返す。
+    /// 確率はトークンの対数確率から求める（sherpa-onnx が返さないときは nil）。
+    private func decode(_ samples: [Float]) async -> [(text: String, start: TimeInterval, probability: Double?)] {
         await withCheckedContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(returning: Self.run(recognizer: recognizer, samples: samples))
@@ -76,7 +77,7 @@ public final class ReazonSpeechContext: @unchecked Sendable {
         }
     }
 
-    private static func run(recognizer: OpaquePointer, samples: [Float]) -> [(text: String, start: TimeInterval)] {
+    private static func run(recognizer: OpaquePointer, samples: [Float]) -> [(text: String, start: TimeInterval, probability: Double?)] {
         guard let stream = SherpaOnnxCreateOfflineStream(recognizer) else { return [] }
         defer { SherpaOnnxDestroyOfflineStream(stream) }
         samples.withUnsafeBufferPointer { buf in
@@ -88,15 +89,17 @@ public final class ReazonSpeechContext: @unchecked Sendable {
         let r = result.pointee
         let count = Int(r.count)
         if count > 0, let tokens = r.tokens_arr, let times = r.timestamps {
+            let logProbs = r.ys_log_probs
             return (0 ..< count).compactMap { i in
                 guard let token = tokens[i] else { return nil }
-                return (String(cString: token), TimeInterval(times[i]))
+                let p = logProbs.map { min(max(exp(Double($0[i])), 0), 1) }
+                return (String(cString: token), TimeInterval(times[i]), p)
             }
         }
         // 時刻がない場合は全体を 1 つにする
         guard let text = r.text else { return [] }
         let whole = String(cString: text)
-        return whole.isEmpty ? [] : [(whole, 0)]
+        return whole.isEmpty ? [] : [(whole, 0, nil)]
     }
 }
 
@@ -133,7 +136,12 @@ extension ReazonSpeechContext: Transcriber {
                 let utteranceEnd = window.time(atFrame: range.upperBound)
                 let first = tokens.first.map { utteranceStart + $0.start - Self.padding } ?? utteranceStart
                 let start = min(max(first, utteranceStart), utteranceEnd)
-                segments.append(TranscriptSegment(start: start, end: utteranceEnd, text: text))
+                // 確率はモデルが返したときだけ付ける
+                let words = tokens.contains { $0.probability != nil }
+                    ? tokens.map { TranscriptWord(text: $0.text, probability: $0.probability) } : nil
+                segments.append(TranscriptSegment(start: start, end: utteranceEnd, text: text,
+                                                  confidence: words.flatMap(TranscriptSegment.meanProbability(of:)),
+                                                  words: words))
                 if total > 0 { progress(min(utteranceEnd / total, 0.999)) }
             }
             window.consume(result.consumed)

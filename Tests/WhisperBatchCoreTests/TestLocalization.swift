@@ -13,4 +13,15 @@ enum TestLocalization {
     }()
 
     static func setUp() { _ = loaded }
+
+    /// アプリ側（テストから参照できないターゲット）で、値から組み立てて使うキー
+    static let extraDynamicKeys: [String] = [
+        // ライブ文字起こしの品質（LiveQualityMeter.Status）
+        "live.quality.measuring", "live.quality.good", "live.quality.delayed", "live.quality.behind",
+        "live.quality.measuring.help", "live.quality.good.help", "live.quality.delayed.help", "live.quality.behind.help",
+        // 結果の表示方法（TranscriptViewMode）
+        "editor.mode.text", "editor.mode.segments",
+        // 話者識別のモデル（ModelCatalog.auxiliary）
+        "model.speaker-diarization.name", "model.speaker-diarization.summary",
+    ]
 }

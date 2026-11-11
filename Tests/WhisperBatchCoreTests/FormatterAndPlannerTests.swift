@@ -302,6 +302,17 @@ struct LocalizationTests {
             for part in ["name", "summary", "source"] { used.insert("engine.\(engine.rawValue).\(part)") }
             used.insert("models.message.\(engine.rawValue)")
         }
+        for method in AnalysisMethod.allCases { used.insert("analysis.method.\(method.rawValue)") }
+        for reason in KeyPointReason.allCases { used.insert("keyPoint.reason.\(reason.rawValue)") }
+        for threshold in ReviewThreshold.allCases { used.insert("reviewThreshold.\(threshold.rawValue)") }
+        for key in TestLocalization.extraDynamicKeys { used.insert(key) }
+        for c in LLMCategory.allCases { used.insert("llm.category.\(c.rawValue)") }
+        for v in [LLMVerification.verified, .familyVerified, .unverified, .incompatible] { used.insert("llm.verification.\(v.rawValue)") }
+        for t in AITask.allCases { used.insert("ai.task.\(t.rawValue)") }
+        for m in AISelectionMode.allCases { used.insert("ai.selection.\(m.rawValue)"); used.insert("ai.selection.\(m.rawValue).note") }
+        for m in AIRewriteMode.allCases { used.insert("ai.rewriteMode.\(m.rawValue)"); used.insert("ai.rewriteMode.\(m.rawValue).short") }
+        // モデルの補足は、あるものだけ（なければ表示しない）
+        for m in LocalLLMCatalog.all where ja["llm.note.\(m.id)"] != nil { used.insert("llm.note.\(m.id)") }
         #expect(used.subtracting(ja.keys).sorted() == [])
         #expect(used.subtracting(en.keys).sorted() == [])
         // 使われていないキーがない

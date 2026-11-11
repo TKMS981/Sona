@@ -88,6 +88,19 @@ struct ContentView: View {
         .sheet(isPresented: $model.showModelManager) {
             ModelManagerSheet()
         }
+        .sheet(item: $model.speakerSheet) { target in
+            SpeakerSheet(itemID: target.id)
+        }
+        .sheet(item: $model.fillerSheet) { target in
+            FillerSheet(itemID: target.id)
+        }
+        .sheet(item: $model.rewriteSheet) { target in
+            AIRewriteSheet(itemID: target.itemID, task: target.task)
+        }
+        .sheet(item: Binding(get: { model.analysisSheet.flatMap { if case .item = $0 { $0 } else { nil } } },
+                             set: { model.analysisSheet = $0 })) { target in
+            AnalysisSheet(target: target)
+        }
         .modifier(DownloadConfirmation())
         .modifier(WindowThemeBackground(settings: model.appearance))
         .onAppear {

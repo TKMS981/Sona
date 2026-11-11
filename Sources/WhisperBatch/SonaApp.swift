@@ -3,12 +3,15 @@ import SwiftUI
 import WhisperBatchCore
 import WhisperBatchEngine
 
-@main
-struct SonaApp: App {
+/// アプリ本体（Air と Vantage で共通）。起動はエディションごとの実行ファイル（SonaAir / SonaVantage）が
+/// `SonaRuntime.configure` でエディションと AI の実装を設定してから `SonaApp.main()` を呼ぶ。
+public struct SonaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    var body: some Scene {
-        Window("Sona", id: "main") {
+    public init() {}
+
+    public var body: some Scene {
+        Window(SonaRuntime.edition.productName, id: "main") {
             ContentView()
                 .modifier(MotionProvider())
                 .modifier(AppearanceProvider(settings: appDelegate.model.appearance, appliesBackground: true))
@@ -136,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // このプロセスの変換用・ライブ文字起こし用の一時ファイルを残さない（ほかのプロセスのものは消さない）
         ConversionWorkspace.removeOwnFiles()
         LiveRecordingWorkspace.removeOwnFiles()
+        DragExportWorkspace.removeOwnFiles()
     }
 }
 

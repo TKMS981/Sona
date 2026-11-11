@@ -34,6 +34,8 @@ final class LiveController {
     var permissionAlert: PermissionAlert?
     /// 直近の保存結果の案内
     var lastSaveMessage: String?
+    /// 終了した結果の要約・重要な発言（新しいセッションを始めると消える）
+    var analysis = TranscriptAnalysis()
 
     struct PermissionAlert: Identifiable {
         enum Kind { case microphone, screen }
@@ -206,6 +208,7 @@ final class LiveController {
             labels[.microphone] = micDeviceName
         }
         lastSaveMessage = nil
+        analysis = TranscriptAnalysis()
         await session.start(.init(model: model, language: settings.language, sources: sources, labels: labels,
                                   windowID: windowID, recordsAudio: recordsAudio,
                                   vocabularyHint: settings.liveVocabularyHint))
@@ -258,6 +261,7 @@ final class LiveController {
         }
         session.reset()
         lastSaveMessage = nil
+        analysis = TranscriptAnalysis()
     }
 
     func shutdown() async {
@@ -294,7 +298,8 @@ final class LiveController {
     func saveTranscript(format: ExportFormat, includeTimestamps: Bool) {
         Task {
             let outcome = await ExportService.exportLive(session.transcript.transcript, startedAt: session.startedAt,
-                                                         format: format, includeTimestamps: includeTimestamps)
+                                                         format: format, includeTimestamps: includeTimestamps,
+                                                         analysis: analysis)
             if case .saved(let message) = outcome {
                 session.markTranscriptSaved()
                 lastSaveMessage = message

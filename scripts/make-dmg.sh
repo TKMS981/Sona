@@ -1,10 +1,11 @@
 #!/bin/zsh
 # 配布用のディスクイメージ（DMG）を作る。
 #
-#   ./scripts/make-dmg.sh             # アプリをビルドしてから DMG を作成
+#   ./scripts/make-dmg.sh             # アプリをビルドしてから DMG を作成（Sona Vantage）
 #   ./scripts/make-dmg.sh --no-build  # build/Sona.app をそのまま使う
+#   WB_EDITION=air ./scripts/make-dmg.sh   # Sona Air（build/Sona Air.app）
 #
-# 出力: build/Sona-<バージョン>.dmg と、その SHA-256（.sha256）
+# 出力: build/Sona-Vantage-<バージョン>.dmg（Air は build/Sona-Air-<バージョン>.dmg）と、その SHA-256（.sha256）
 # 初回は dmgbuild（PyPI）を .build/dmg-venv に取得する。
 # DMG を開くとアプリと「アプリケーション」フォルダへのリンクが並び、ドラッグでインストールできる。
 #
@@ -51,11 +52,16 @@ notarize() {
   echo "    受け付けられました（ID: $submission_id）"
 }
 
-app_name="Sona"
+edition="${WB_EDITION:-vantage}"
+case "$edition" in
+  vantage) app_name="Sona"; dmg_prefix="Sona-Vantage"; volume_title="Sona Vantage" ;;
+  air) app_name="Sona Air"; dmg_prefix="Sona-Air"; volume_title="Sona Air" ;;
+  *) echo "WB_EDITION は vantage か air で指定してください: $edition" >&2; exit 1 ;;
+esac
 app="build/$app_name.app"
 
 if [[ "${1:-}" != "--no-build" ]]; then
-  ./scripts/build-app.sh release
+  WB_EDITION="$edition" ./scripts/build-app.sh release
 fi
 [[ -d "$app" ]] || { echo "アプリが見つかりません: $app" >&2; exit 1; }
 codesign --verify --strict --deep "$app"
@@ -75,8 +81,8 @@ if [[ -n "$identity" ]]; then
 fi
 
 version="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")"
-dmg="build/Sona-$version.dmg"
-volname="$app_name $version"
+dmg="build/$dmg_prefix-$version.dmg"
+volname="$volume_title $version"
 
 # 配布物にビルドした Mac のホームディレクトリのパスが残っていないか確認する
 if python3 -I - "$app" "$HOME" <<'EOF'

@@ -81,7 +81,27 @@ public struct QueueItem: Identifiable, Equatable, Sendable {
     /// 読み込んで確認した種類（確認前は nil）
     public var mediaKind: MediaKind?
     public var status: ItemStatus
+    /// 認識した原文（編集しても書き換えない。話者識別の結果は区間の `speaker` に入れる）
     public var transcript: Transcript?
+    /// 編集・話者名・要約など（原文とは別に持つ。やり直すと消える）
+    public var annotations = TranscriptAnnotations()
+
+    /// 編集を反映した文字起こし（書き出し・コピー・表示に使う）
+    public var editedTranscript: Transcript? {
+        transcript.map { annotations.edits.apply(to: $0) }
+    }
+
+    /// 書き出しに添える情報（題名はファイル名から拡張子を除いたもの）
+    public var exportContext: ExportContext {
+        let stem = (displayName as NSString).deletingPathExtension
+        return ExportContext(title: stem.isEmpty ? displayName : stem, speakerNames: annotations.speakerNames,
+                             analysis: annotations.analysis.isEmpty ? nil : annotations.analysis, duration: duration)
+    }
+
+    /// 話者識別の結果がある
+    public var hasSpeakers: Bool {
+        transcript?.segments.contains { $0.speaker != nil } ?? false
+    }
 
     public init(id: UUID = UUID(), url: URL, bookmark: Data?, displayName: String? = nil) {
         self.id = id
@@ -268,6 +288,17 @@ public struct TranscriptionQueue: Equatable, Sendable {
         return before - items.count
     }
 
+    /// 項目の順序を変える（一覧のドラッグ）。待機中の項目は上から順に処理する。
+    public mutating func move(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard !source.isEmpty, source.allSatisfy({ items.indices.contains($0) }),
+              (0 ... items.count).contains(destination) else { return }
+        let moving = source.map { items[$0] }
+        var rest = items.enumerated().filter { !source.contains($0.offset) }.map(\.element)
+        let insertAt = destination - source.filter { $0 < destination }.count
+        rest.insert(contentsOf: moving, at: min(max(insertAt, 0), rest.count))
+        items = rest
+    }
+
     /// 処理中以外の項目をすべて削除する
     @discardableResult
     public mutating func removeAllRemovable() -> Int {
@@ -332,16 +363,43 @@ public struct TranscriptionQueue: Equatable, Sendable {
         try transition(id, to: .cancelled) { $0 == .pending || $0.isProcessing }
     }
 
-    /// failed / cancelled / completed → pending。結果は破棄する。戻した件数を返す。
+    /// failed / cancelled / completed → pending。結果と編集は破棄する。戻した件数を返す。
     @discardableResult
     public mutating func resetForRetry(_ ids: Set<UUID>) -> Int {
         var n = 0
         for i in items.indices where ids.contains(items[i].id) && items[i].status.isRetryable {
             items[i].status = .pending
             items[i].transcript = nil
+            items[i].annotations = TranscriptAnnotations()
             n += 1
         }
         return n
+    }
+
+    // MARK: 結果の編集（完了した項目だけ）
+
+    /// 編集・話者名・要約などを変える。完了していない項目では何もしない。
+    public mutating func updateAnnotations(_ id: UUID, _ body: (inout TranscriptAnnotations) -> Void) {
+        guard let i = index(id), items[i].status == .completed, items[i].transcript != nil else { return }
+        body(&items[i].annotations)
+    }
+
+    /// 話者識別の結果を原文の区間に入れる（区間の数と同じ長さ。nil は話者なし）。
+    /// 付け直すと話者の番号が変わるので、付けていた名前は消す。
+    public mutating func setSpeakers(_ id: UUID, _ speakers: [Int?]) {
+        guard let i = index(id), items[i].status == .completed, var transcript = items[i].transcript,
+              transcript.segments.count == speakers.count else { return }
+        for j in transcript.segments.indices { transcript.segments[j].speaker = speakers[j] }
+        items[i].transcript = transcript
+        items[i].annotations.speakerNames = [:]
+    }
+
+    /// 1 つの区間の話者を変える（利用者が手で直す）
+    public mutating func setSpeaker(_ id: UUID, segment: Int, speaker: Int?) {
+        guard let i = index(id), items[i].status == .completed, var transcript = items[i].transcript,
+              transcript.segments.indices.contains(segment) else { return }
+        transcript.segments[segment].speaker = speaker
+        items[i].transcript = transcript
     }
 
     // MARK: private

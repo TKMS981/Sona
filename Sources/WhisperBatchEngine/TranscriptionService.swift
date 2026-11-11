@@ -64,6 +64,26 @@ public final class TranscriptionService {
     @discardableResult
     public func removeAllCompleted() -> Int { queue.removeAllCompleted() }
 
+    /// 項目の順序を変える（待機中の項目は上から順に処理する）
+    public func move(fromOffsets source: IndexSet, toOffset destination: Int) {
+        queue.move(fromOffsets: source, toOffset: destination)
+    }
+
+    /// 完了した項目の編集・話者名・要約などを変える
+    public func updateAnnotations(_ id: UUID, _ body: (inout TranscriptAnnotations) -> Void) {
+        queue.updateAnnotations(id, body)
+    }
+
+    /// 話者識別の結果を入れる
+    public func setSpeakers(_ id: UUID, _ speakers: [Int?]) {
+        queue.setSpeakers(id, speakers)
+    }
+
+    /// 1 つの区間の話者を変える
+    public func setSpeaker(_ id: UUID, segment: Int, speaker: Int?) {
+        queue.setSpeaker(id, segment: segment, speaker: speaker)
+    }
+
     /// 古くなったブックマークを作り直したときに、キューの項目へ反映する
     public func applyRefreshedBookmark(_ refreshed: SecurityScopedAccess.RefreshedBookmark, to id: UUID) {
         queue.updateLocation(id, url: refreshed.url, bookmark: refreshed.bookmark)

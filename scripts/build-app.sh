@@ -1,8 +1,15 @@
 #!/bin/zsh
 # Sona.app を組み立てる（Apple Silicon / arm64 のみ）。
 #
-#   ./scripts/build-app.sh            # リリースビルド → build/Sona.app
+#   ./scripts/build-app.sh            # リリースビルド → build/Sona.app（Sona Vantage。AI 搭載）
 #   ./scripts/build-app.sh debug      # デバッグビルド
+#   WB_EDITION=air ./scripts/build-app.sh   # Sona Air（AI なし）→ build/Sona Air.app
+#
+# エディション（WB_EDITION）:
+#   vantage（既定）: これまでと同じ build/Sona.app。llama.framework（ローカルの言語モデル）を同梱する。
+#   air: AI の機能・モデル・推論エンジンを含めない。llama.framework を同梱せず、実行ファイルが llama.cpp と
+#        FoundationModels にリンクしていないことを確かめる。Bundle ID は com.example.WhisperBatch.Air
+#        （Vantage と並べて入れられる。設定・モデルは Air のコンテナに別に持つ）。権限は Vantage と同じ。
 #
 # Xcode がなくても Command Line Tools（Swift 6.2 以降・macOS 27 SDK）で動く。
 #
@@ -23,7 +30,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 config="${1:-release}"
-app_name="Sona"
+edition="${WB_EDITION:-vantage}"
+case "$edition" in
+  vantage) app_name="Sona"; product="Sona" ;;
+  air) app_name="Sona Air"; product="SonaAir" ;;
+  *) echo "WB_EDITION は vantage か air で指定してください: $edition" >&2; exit 1 ;;
+esac
 out_dir="build"
 app="$out_dir/$app_name.app"
 identity="${WB_SIGN_IDENTITY:-}"
@@ -47,11 +59,12 @@ fi
 # MP3 エンコーダー（LAME）のソースを取得・検証する（取得済みなら何もしない）
 ./scripts/fetch-lame.sh
 
-echo "==> swift build ($config, arm64)"
-swift build -c "$config" --arch arm64 --product Sona
+echo "==> swift build ($config, arm64, $edition)"
+swift build -c "$config" --arch arm64 --product "$product"
 bin_dir="$(swift build -c "$config" --arch arm64 --show-bin-path)"
 
-exe="$bin_dir/Sona"
+exe="$bin_dir/$product"
+llama="$bin_dir/llama.framework"
 framework="$bin_dir/whisper.framework"
 lame="$bin_dir/libLAME.dylib"
 sherpa="$bin_dir/libsherpa-onnx-c-api.dylib"
@@ -59,21 +72,43 @@ sherpa="$bin_dir/libsherpa-onnx-c-api.dylib"
 [[ -d "$framework" ]] || { echo "whisper.framework が見つかりません: $framework" >&2; exit 1; }
 [[ -f "$lame" ]] || { echo "libLAME.dylib が見つかりません: $lame" >&2; exit 1; }
 [[ -f "$sherpa" ]] || { echo "libsherpa-onnx-c-api.dylib が見つかりません: $sherpa" >&2; exit 1; }
+if [[ "$edition" == "vantage" ]]; then
+  [[ -d "$llama" ]] || { echo "llama.framework が見つかりません: $llama" >&2; exit 1; }
+else
+  # Air は AI の推論エンジンにリンクしない
+  if otool -L "$exe" | grep -qE "llama\.framework|FoundationModels\.framework"; then
+    echo "Sona Air の実行ファイルが AI の推論エンジン（llama.cpp / FoundationModels）にリンクしています" >&2
+    exit 1
+  fi
+fi
 
 echo "==> $app を作成"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Frameworks" "$app/Contents/Resources"
 cp "App/Info.plist" "$app/Contents/Info.plist"
+# 実行ファイルの名前は Info.plist（CFBundleExecutable）と同じ Sona にする
 cp "$exe" "$app/Contents/MacOS/Sona"
+if [[ "$edition" == "air" ]]; then
+  # 表示名と Bundle ID を Air のものにする（App/Info.plist は変えず、組み立てたアプリの中のコピーを書き換える）
+  plutil -replace CFBundleName -string "Sona Air" "$app/Contents/Info.plist"
+  plutil -replace CFBundleDisplayName -string "Sona Air" "$app/Contents/Info.plist"
+  plutil -replace CFBundleIdentifier -string "com.example.WhisperBatch.Air" "$app/Contents/Info.plist"
+fi
 # シンボリックリンク構造を保ったままコピーする
 ditto "$framework" "$app/Contents/Frameworks/whisper.framework"
 # LAME は LGPL のため、差し替えできるよう動的ライブラリのまま同梱する
 cp "$lame" "$app/Contents/Frameworks/libLAME.dylib"
 # sherpa-onnx（ReazonSpeech の実行用、onnxruntime を静的に含む）
 cp "$sherpa" "$app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
+fw_bins=("$app/Contents/Frameworks/whisper.framework/Versions/A/whisper" "$app/Contents/Frameworks/libsherpa-onnx-c-api.dylib")
+# llama.cpp（ローカルの言語モデル。Vantage だけ）
+if [[ "$edition" == "vantage" ]]; then
+  ditto "$llama" "$app/Contents/Frameworks/llama.framework"
+  fw_bins+=("$app/Contents/Frameworks/llama.framework/Versions/A/llama")
+fi
 
-# whisper.framework と sherpa-onnx は x86_64 も含むユニバーサルバイナリなので arm64 だけにする
-for fw_bin in "$app/Contents/Frameworks/whisper.framework/Versions/A/whisper" "$app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"; do
+# whisper.framework・sherpa-onnx・llama.framework は x86_64 も含むユニバーサルバイナリなので arm64 だけにする
+for fw_bin in "${fw_bins[@]}"; do
   if lipo -archs "$fw_bin" | grep -q x86_64; then
     lipo "$fw_bin" -thin arm64 -output "$fw_bin.arm64"
     mv "$fw_bin.arm64" "$fw_bin"
@@ -107,6 +142,7 @@ nested=(
   "$app/Contents/Frameworks/libLAME.dylib"
   "$app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
 )
+[[ "$edition" == "vantage" ]] && nested+=("$app/Contents/Frameworks/llama.framework")
 entitlements="App/WhisperBatch.entitlements"
 
 if [[ -n "$identity" ]]; then

@@ -290,12 +290,14 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         if alreadyCancelled { task.cancel() }
     }
 
+    /// 利用者の中止。再開用のデータを作って止める（再開用のデータは URLSession が持つ一時ファイルを指す。
+    /// 検証前のファイルは作らない。再開するときも接続先を確かめる）
     func cancel() {
         let task = state.withLock { s in
             s.cancelled = true
             return s.task
         }
-        task?.cancel()
+        task?.cancel(byProducingResumeData: { _ in })
     }
 
     /// こちらで決めた理由で中止する（利用者の中止とは区別する）。最初の理由を残す。
@@ -379,7 +381,9 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, URLS
         }
         guard let continuation else { return }
         if cancelled {
-            continuation.resume(throwing: ModelDownloadInterruption(reason: .cancelled, resumeData: nil))
+            // 途中から再開できるよう、URLSession が作った再開用のデータを渡す（作れなかったときは nil）
+            let resume = (error as NSError?)?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+            continuation.resume(throwing: ModelDownloadInterruption(reason: .cancelled, resumeData: resume))
             return
         }
         // 接続先を拒否して中止した場合など、こちらで決めた失敗を通信エラーより優先する

@@ -35,6 +35,16 @@ struct ModelManagerSheet: View {
                 ForEach(ModelCatalog.models(for: shownEngine)) { m in
                     ModelRow(model: m, deleteTarget: $deleteTarget, downloadTarget: $downloadTarget)
                 }
+                // 文字起こし以外のモデル（話者識別。Vantage だけ）。ローカルの言語モデルは設定の「AI モデル」で管理する
+                if model.has(.speakerIdentification) {
+                    Section {
+                        ForEach(ModelCatalog.auxiliary) { m in
+                            ModelRow(model: m, deleteTarget: $deleteTarget, downloadTarget: $downloadTarget)
+                        }
+                    } header: {
+                        Text(L("models.auxiliary.section"))
+                    }
+                }
             }
             .frame(minHeight: 300)
             .accessibilityLabel(L("models.list.accessibility"))
@@ -102,8 +112,9 @@ private struct ModelRow: View {
     var body: some View {
         let state = app.models.state(for: model)
         let isSelected = app.selectedModelID == model.id
+        let isTranscription = model.purpose == .transcription
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+            Image(systemName: isTranscription ? (isSelected ? "largecircle.fill.circle" : "circle") : "person.2")
                 .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -189,11 +200,14 @@ private struct ModelRow: View {
                 // Apple の言語データは OS が管理するので、このアプリからは削除しない
                 if model.isDownloadable {
                     Button(L("models.delete")) { deleteTarget = model }
-                        .disabled(app.isRunning && isSelected)
+                        .disabled((app.isRunning && isSelected) || (model.purpose == .speakerDiarization && !app.speakerJobs.isEmpty))
                 }
             }
-            Button(isSelected ? L("models.inUse") : L("models.use")) { app.selectedModelID = model.id }
-                .disabled(isSelected || app.isRunning)
+            // 話者識別などのモデルは「使う」を選ぶものではない（話者識別の画面で使う）
+            if model.purpose == .transcription {
+                Button(isSelected ? L("models.inUse") : L("models.use")) { app.selectedModelID = model.id }
+                    .disabled(isSelected || app.isRunning)
+            }
         }
         .controlSize(.small)
     }

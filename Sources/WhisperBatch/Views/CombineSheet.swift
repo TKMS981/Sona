@@ -133,8 +133,9 @@ struct CombineSheet: View {
 
     private func save() {
         let entries: [CombinedEntry] = rows.filter(\.included).compactMap { row in
-            guard let item = model.queue.item(row.id), let transcript = item.transcript else { return nil }
-            return CombinedEntry(title: item.displayName, transcript: transcript)
+            // 編集と話者名を反映した結果を使う
+            guard let item = model.queue.item(row.id), let transcript = item.editedTranscript else { return nil }
+            return CombinedEntry(title: item.displayName, transcript: transcript, speakerNames: item.annotations.speakerNames)
         }
         isSaving = true
         errorMessage = nil

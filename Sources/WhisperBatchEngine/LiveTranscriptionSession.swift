@@ -37,7 +37,7 @@ extension WhisperContext: LiveRecognizer {
         let limit = Double(samples.count) / LiveAudioSink.sampleRate
         let segments = result.segments.compactMap { seg -> TranscriptSegment? in
             guard seg.start < limit else { return nil }
-            return TranscriptSegment(start: seg.start, end: min(seg.end, limit), text: seg.text)
+            return seg.with(start: seg.start, end: min(seg.end, limit))
         }
         return LiveRecognition(segments: segments, language: result.language)
     }
@@ -164,6 +164,23 @@ public final class LiveTranscriptionSession {
     public private(set) var hasUnsavedTranscript = false
     /// 認識が追いついていない音声の長さ（秒。まだ一度も認識していない分）
     public private(set) var backlogSeconds: TimeInterval = 0
+    /// 認識品質と遅れの記録（確定までの遅れ・1 回の処理時間・確からしさ）
+    public private(set) var quality = LiveQualityMeter()
+    /// 最後に音声を取りこぼした日時
+    public private(set) var lastDropDate: Date?
+
+    /// 入力が止まった（対象が閉じた・機器が外れた・OS に止められた）ときに呼ぶ（通知用。メインアクター）
+    @ObservationIgnored public var onInputInterrupted: ((String) -> Void)?
+
+    /// 直近（10 秒以内）に音声を取りこぼした
+    public func droppedRecently(at date: Date = Date()) -> Bool {
+        lastDropDate.map { date.timeIntervalSince($0) < 10 } ?? false
+    }
+
+    /// 品質の全体の状態
+    public func qualityStatus(at date: Date = Date()) -> LiveQualityMeter.Status {
+        quality.status(backlog: backlogSeconds, recentlyDropped: droppedRecently(at: date))
+    }
 
     /// 調査・測定用の記録（画面には出さない）
     public struct Diagnostics: Equatable, Sendable {
@@ -428,6 +445,8 @@ public final class LiveTranscriptionSession {
         window = LiveAudioWindow(sampleRate: sampleRate, capacity: policy.hardLimit)
         lastRecognizedEnd = 0
         backlogSeconds = 0
+        quality = LiveQualityMeter()
+        lastDropDate = nil
         diagnostics = Diagnostics()
         consecutiveFailures = 0
         lastDropNotice = .distantPast
@@ -553,6 +572,7 @@ public final class LiveTranscriptionSession {
     private func noteDropped(_ frames: Int) {
         guard frames > 0 else { return }
         droppedSeconds += Double(frames) / sampleRate
+        lastDropDate = Date()
         if Date().timeIntervalSince(lastDropNotice) > 10 {
             lastDropNotice = Date()
             addNotice(.warning, L("live.notice.dropped"))
@@ -578,17 +598,27 @@ public final class LiveTranscriptionSession {
         sink.setInputs(activeKinds)
         updateInputs()
         let name = inputName(kind)
+        let message: String
         switch reason {
         case .targetClosed:
             lostKinds.insert(kind)
-            addNotice(.warning, kind == .window ? L("live.notice.windowClosed") : L("live.notice.targetClosed", name))
+            message = kind == .window ? L("live.notice.windowClosed") : L("live.notice.targetClosed", name)
+            addNotice(.warning, message)
         case .stoppedBySystem:
             lostKinds.insert(kind)
-            addNotice(.warning, L("live.notice.stoppedBySystem", name))
+            message = L("live.notice.stoppedBySystem", name)
+            addNotice(.warning, message)
         case .deviceLost:
-            addNotice(.warning, L("live.notice.micLost"))
+            message = L("live.notice.micLost")
+            addNotice(.warning, message)
         case .failed(let detail):
-            addNotice(.error, L("live.notice.inputFailed", name, detail))
+            message = L("live.notice.inputFailed", name, detail)
+            addNotice(.error, message)
+        }
+        if activeKinds.isEmpty, state == .running {
+            onInputInterrupted?(message + "\n" + L("live.notice.pausedNoInput"))
+        } else {
+            onInputInterrupted?(message)
         }
         if activeKinds.isEmpty, state == .running {
             addNotice(.warning, L("live.notice.pausedNoInput"))
@@ -667,7 +697,10 @@ public final class LiveTranscriptionSession {
         // 前回の暫定の区間（今回の音声の先頭からの相対時刻）。2 回続けて同じ結果になった区間を確定するのに使う。
         let previous = transcript.provisional.map { $0.shifted(by: -windowStart) }
         do {
+            let began = ContinuousClock.now
             let result = try await recognizer.recognize(snapshot, language: lockedLanguage, prompt: prompt)
+            let took = ContinuousClock.now - began
+            quality.recordRecognition(processingSeconds: Double(took.components.seconds) + Double(took.components.attoseconds) / 1e18)
             consecutiveFailures = 0
             // 自動判定は、最初に発話を認識したときの言語で固定する
             if lockedLanguage == nil, !result.segments.isEmpty, let detected = result.language {
@@ -682,7 +715,12 @@ public final class LiveTranscriptionSession {
                                          pauses: analysis.pauses, silences: analysis.silences, previous: previous,
                                          gaps: analysis.gaps,
                                          quietest: { analysis.quietestTime(in: $0) }, isFinal: isFinal)
+            let confirmedBefore = transcript.confirmed.count
             transcript.apply(decision, windowStart: windowStart)
+            // 一時停止・終了時にまとめて確定した分は、遅れの記録に含めない（話し終わりを待たずに確定するため）
+            if !isFinal, transcript.confirmed.count > confirmedBefore {
+                quality.recordConfirmed(Array(transcript.confirmed[confirmedBefore...]), elapsed: elapsed())
+            }
             if !decision.confirmed.isEmpty {
                 diagnostics.commits[decision.reason, default: 0] += 1
                 diagnostics.lastCommitReason = decision.reason

@@ -191,3 +191,36 @@ extension TemporaryWorkspace {
     public static let conversions = TemporaryWorkspace(
         base: FileManager.default.temporaryDirectory.appendingPathComponent("Sona-Conversions", isDirectory: true))
 }
+
+extension TemporaryWorkspace {
+    /// 文字起こしの結果をドラッグで書き出すときの一時ファイル
+    public static let dragExports = TemporaryWorkspace(
+        base: FileManager.default.temporaryDirectory.appendingPathComponent("Sona-Drag", isDirectory: true))
+}
+
+/// ドラッグで書き出すファイルを置くフォルダ（プロセスごと。終了時と次回の起動時に消す）。
+/// ドロップ先（Finder など）はこのファイルを複製するので、元の一時ファイルは消してよい。
+public enum DragExportWorkspace {
+    static var workspace: TemporaryWorkspace { .dragExports }
+
+    /// 指定した名前のファイルに文字を書く（同じ名前でぶつからないよう、ドラッグごとに別のフォルダに置く）
+    public static func write(_ text: String, fileName: String) throws -> URL {
+        let folder = try workspace.directory().appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false,
+                                                attributes: [.posixPermissions: 0o700])
+        let safe = sanitizedFileName(fileName)
+        let url = folder.appendingPathComponent(safe)
+        try Data(text.utf8).write(to: url, options: [.withoutOverwriting])
+        return url
+    }
+
+    /// ファイル名に使えない文字を置き換える
+    public static func sanitizedFileName(_ name: String) -> String {
+        let replaced = name.map { "/:\0".contains($0) ? "-" : $0 }
+        let s = String(replaced).trimmingCharacters(in: .whitespaces)
+        return s.isEmpty || s.hasPrefix(".") ? "transcript" + s : s
+    }
+
+    public static func removeAbandonedFiles() { workspace.removeAbandoned() }
+    public static func removeOwnFiles() { workspace.removeOwnFiles() }
+}

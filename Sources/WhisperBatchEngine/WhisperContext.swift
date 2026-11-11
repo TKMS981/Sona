@@ -169,11 +169,40 @@ public final class WhisperContext: @unchecked Sendable {
             // t0/t1 は 10ms 単位
             let t0 = Double(whisper_full_get_segment_t0(ctx, i)) / 100
             let t1 = Double(whisper_full_get_segment_t1(ctx, i)) / 100
-            segments.append(TranscriptSegment(start: t0, end: max(t1, t0), text: text))
+            let words = tokenWords(ctx: ctx, segment: i)
+            segments.append(TranscriptSegment(start: t0, end: max(t1, t0), text: text,
+                                              confidence: TranscriptSegment.meanProbability(of: words),
+                                              words: words.isEmpty ? nil : words))
         }
         let langID = whisper_full_lang_id(ctx)
         let lang = langID >= 0 ? whisper_lang_str(langID).map { String(cString: $0) } : nil
         return .success(ChunkResult(segments: segments, language: lang))
+    }
+
+    /// 区間のトークンと、それぞれの確率（Whisper が選んだトークンの確率）。特殊トークン（時刻など）は除く。
+    ///
+    /// 日本語などでは 1 文字が複数のトークンに分かれることがあるため、UTF-8 として読める単位になるまで
+    /// バイト列をつなげ、その中で最も低い確率をその語句の確率にする。
+    static func tokenWords(ctx: OpaquePointer, segment i: Int32) -> [TranscriptWord] {
+        let eot = whisper_token_eot(ctx)
+        var words: [TranscriptWord] = []
+        var pending: [UInt8] = []
+        var pendingP = 1.0
+        for j in 0 ..< whisper_full_n_tokens(ctx, i) {
+            let data = whisper_full_get_token_data(ctx, i, j)
+            guard data.id < eot, let cText = whisper_full_get_token_text(ctx, i, j) else { continue }
+            let bytes = Array(UnsafeBufferPointer(start: UnsafeRawPointer(cText).assumingMemoryBound(to: UInt8.self),
+                                                  count: strlen(cText)))
+            guard !bytes.isEmpty else { continue }
+            pending += bytes
+            pendingP = min(pendingP, Double(data.p))
+            if let text = String(validating: pending, as: UTF8.self) {
+                words.append(TranscriptWord(text: text, probability: min(max(pendingP, 0), 1)))
+                pending = []
+                pendingP = 1
+            }
+        }
+        return words
     }
 
     /// 速度優先は Greedy、精度優先はビーム幅 5 の Beam Search。
@@ -186,7 +215,7 @@ public final class WhisperContext: @unchecked Sendable {
     }
 
     /// 性能コアを中心に使い、UI 用に余裕を残す
-    static var recommendedThreadCount: Int {
+    package static var recommendedThreadCount: Int {
         let cores = ProcessInfo.processInfo.activeProcessorCount
         return max(2, min(8, cores - 2))
     }

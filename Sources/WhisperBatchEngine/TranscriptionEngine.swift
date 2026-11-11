@@ -65,7 +65,7 @@ public enum TranscriptionEngine {
             let decision = planner.decide(segments: result.segments, bufferDuration: chunkDuration, isFinal: window.isExhausted)
             segments += decision.accepted
                 .filter { !$0.text.isEmpty }
-                .map { TranscriptSegment(start: $0.start + chunkStart, end: $0.end + chunkStart, text: $0.text) }
+                .map { $0.shifted(by: chunkStart) }
 
             if window.isExhausted { break }
             window.consume(min(max(Int(decision.resumeAt * rate), 1), length))

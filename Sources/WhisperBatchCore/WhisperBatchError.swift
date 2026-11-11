@@ -43,6 +43,16 @@ public enum WhisperBatchError: Error, Equatable, Sendable {
     // 認識
     case transcriptionFailed(code: Int32)
 
+    // 話者識別
+    /// 話者識別の処理に失敗した
+    case diarizationFailed
+    /// 音声が長すぎて話者識別できない（全体を一度に読み込むため）
+    case audioTooLongForDiarization(maxMinutes: Int)
+
+    // ローカル AI（Apple Intelligence）
+    case onDeviceAIUnavailable(reason: String)
+    case onDeviceAIFailed(detail: String)
+
     // 出力
     case exportFailed(fileName: String, detail: String)
     case nothingToExport
@@ -105,6 +115,14 @@ extension WhisperBatchError: LocalizedError {
             return L("error.readOnlyVolume")
         case .transcriptionFailed(let code):
             return L("error.transcriptionFailed", code)
+        case .diarizationFailed:
+            return L("error.diarizationFailed")
+        case .audioTooLongForDiarization(let minutes):
+            return L("error.audioTooLongForDiarization", minutes)
+        case .onDeviceAIUnavailable(let reason):
+            return L("error.onDeviceAIUnavailable", reason)
+        case .onDeviceAIFailed(let detail):
+            return L("error.onDeviceAIFailed", detail)
         case .exportFailed(let fileName, let detail):
             return L("error.exportFailed", fileName, detail)
         case .nothingToExport:

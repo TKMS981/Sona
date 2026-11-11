@@ -66,6 +66,38 @@ ONNX Runtime が利用しているサードパーティのライセンス表記:
 reazonspeech-k2-v2 — Apache License 2.0 — 株式会社レアゾン・ホールディングス
 https://huggingface.co/reazon-research/reazonspeech-k2-v2
 
+■ 話者識別のモデル（Sona Vantage。アプリには同梱せず、利用者の操作でダウンロード。sherpa-onnx で実行）
+pyannote segmentation-3.0 — MIT License — Copyright (c) 2022 CNRS
+https://huggingface.co/pyannote/segmentation-3.0
+（sherpa-onnx 用に変換したもの: https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0 ）
+3D-Speaker CAM++（speech_campplus_sv_zh_en_16k-common_advanced）— Apache License 2.0 — 3D-Speaker（Alibaba / ModelScope）
+https://github.com/modelscope/3D-Speaker
+（sherpa-onnx 用に変換したもの: https://huggingface.co/csukuangfj/speaker-embedding-models ）
+
+■ llama.cpp / ggml（Sona Vantage だけに同梱: llama.framework, build b11976。ローカルの言語モデルの実行に使用）
+https://github.com/ggml-org/llama.cpp
+License: MIT License — Copyright (c) 2023-2026 The ggml authors
+全文: Contents/Resources/llama.cpp-LICENSE.txt
+
+■ ローカルの言語モデル（Sona Vantage。アプリには同梱せず、利用者が設定の「AI モデル」で選んだときだけダウンロード）
+各モデルのライセンスは、取得の前の確認画面と設定の「AI モデル」に表示します。
+- TinySwallow 1.5B Instruct（Sakana AI）— Apache License 2.0 — https://huggingface.co/SakanaAI/TinySwallow-1.5B-Instruct-GGUF
+- LLM-jp-4.1 8B thinking（LLM-jp / 国立情報学研究所）— Apache License 2.0 — https://huggingface.co/llm-jp/llm-jp-4.1-8b-thinking-gguf
+- Llama-3-ELYZA-JP-8B（ELYZA）— Meta Llama 3 Community License — https://huggingface.co/elyza/Llama-3-ELYZA-JP-8B-GGUF
+  Built with Meta Llama 3.
+- Qwen3 1.7B / 4B / 8B（Qwen, Alibaba）— Apache License 2.0 — https://huggingface.co/Qwen
+- Gemma 4 E2B / E4B（Google。GGUF 変換: ggml-org）— Apache License 2.0 — https://huggingface.co/ggml-org
+- Granite 4.2 3B（IBM）— Apache License 2.0 — https://huggingface.co/ibm-granite/granite-4.2-3b-GGUF
+- Ministral 3 3B Instruct（Mistral AI）— Apache License 2.0 — https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF
+- Phi-4（Microsoft）— MIT License — https://huggingface.co/microsoft/phi-4-gguf
+- gpt-oss 20B（OpenAI。GGUF 変換: ggml-org）— Apache License 2.0 — https://huggingface.co/ggml-org/gpt-oss-20b-GGUF
+- PLaMo 3 Translate 2B / 8B（Preferred Networks）— PLaMo Community License
+  https://plamo.preferredai.jp/info/plamo-community-license-en
+  （個人・非商用は自由。商用は売上 10 億円以下なら登録、超える場合は別途の契約が必要）
+
+■ Apple Intelligence（Sona Vantage。要約・重要な発言・誤認識の修正・文章の整形に使用。macOS 標準の FoundationModels フレームワークの
+  端末内のモデルだけを使い、Private Cloud Compute は使わない。モデルは macOS が管理）
+
 ■ Apple の音声認識（macOS 標準の Speech フレームワーク。言語データは macOS が管理）
 
 ■ LAME（MP3 エンコーダー、アプリに同梱: Contents/Frameworks/libLAME.dylib, LAME 4.0）

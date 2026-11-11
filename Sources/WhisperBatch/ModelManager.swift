@@ -44,6 +44,8 @@ final class ModelManager {
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var resumeData: [String: Data] = [:]
     @ObservationIgnored private var appleRefreshTask: Task<Void, Never>?
+    /// ダウンロードが終わったとき（失敗なら理由。中止は含めない）。通知に使う。
+    @ObservationIgnored var onDownloadFinished: ((SpeechModel, String?) -> Void)?
 
     init() {
         do {
@@ -72,7 +74,7 @@ final class ModelManager {
     /// ディスク上の状態を読み直す（ダウンロード中・失敗表示中のものはそのまま）
     func refresh() {
         refreshAppleStates()
-        for model in ModelCatalog.all where model.isDownloadable {
+        for model in Self.downloadableModels where model.isDownloadable {
             let current = states[model.id]
             if current?.isBusy == true { continue }
             if storage?.isInstalled(model) == true {
@@ -106,6 +108,19 @@ final class ModelManager {
         }
     }
 
+    /// 状態を管理するモデル（文字起こし・話者識別・ローカルの言語モデルの今と以前のリビジョン）
+    static var downloadableModels: [SpeechModel] {
+        ModelCatalog.all + ModelCatalog.auxiliary
+            + LocalLLMCatalog.all.flatMap { m in [m.downloadModel] + m.previousFiles.map { m.downloadModel(for: $0) } }
+    }
+
+    /// ローカルの言語モデルの取得状況（画面の更新のため、状態の表も参照する）
+    func llmInstallation(_ model: LocalLLM) -> ModelInstallation {
+        _ = states[model.downloadModel.id]
+        guard let storage else { return .notInstalled }
+        return ModelInstallation.resolve(model, storage: storage)
+    }
+
     func download(_ model: SpeechModel) {
         guard !state(for: model).isBusy else { return }
         if model.engine == .apple {
@@ -136,13 +151,21 @@ final class ModelManager {
                         Task { @MainActor in self?.states[id] = .verifying }
                     })
                 self?.finish(id, state: .installed)
+                self?.onDownloadFinished?(model, nil)
             } catch {
                 if error.isCancelled {
-                    self?.finish(id, state: .notInstalled)
+                    // 再開用のデータがあれば残し、「再開」できるようにする
+                    if let data = error.resumeData {
+                        self?.resumeData[id] = data
+                        self?.finish(id, state: .failed(message: L("download.cancelled"), canResume: true))
+                    } else {
+                        self?.finish(id, state: .notInstalled)
+                    }
                 } else {
                     if let data = error.resumeData { self?.resumeData[id] = data }
-                    self?.finish(id, state: .failed(message: error.errorDescription ?? L("error.detail.unknown"),
-                                                    canResume: error.resumeData != nil))
+                    let message = error.errorDescription ?? L("error.detail.unknown")
+                    self?.finish(id, state: .failed(message: message, canResume: error.resumeData != nil))
+                    self?.onDownloadFinished?(model, message)
                 }
             }
         }
@@ -181,6 +204,12 @@ final class ModelManager {
     }
 
     var hasActiveDownloads: Bool { !tasks.isEmpty }
+
+    /// 中止した・失敗したダウンロードの再開用のデータを捨てて、最初からの状態に戻す
+    func discardResume(_ model: SpeechModel) {
+        resumeData[model.id] = nil
+        if case .failed = state(for: model) { states[model.id] = .notInstalled }
+    }
 
     func delete(_ model: SpeechModel) throws {
         guard let storage, model.isDownloadable else { return }

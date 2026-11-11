@@ -3,7 +3,8 @@ import WhisperBatchCore
 
 /// 設定画面（⌘,）: 一般（表示言語・自動開始・Whisper の探索方式）、ライブ文字起こし、フォント、テーマ
 struct SettingsView: View {
-    private enum Tab: Hashable { case general, live, font, theme }
+    private enum Tab: Hashable { case general, live, editing, ai, notifications, font, theme }
+    @Environment(AppModel.self) private var model
     @ViewState private var tab = Tab.general
 
     var body: some View {
@@ -14,6 +15,18 @@ struct SettingsView: View {
             LiveSettingsTab()
                 .tabItem { Label(L("settings.tab.live"), systemImage: "waveform.badge.mic") }
                 .tag(Tab.live)
+            EditingSettingsTab()
+                .tabItem { Label(L("settings.tab.editing"), systemImage: "pencil.and.list.clipboard") }
+                .tag(Tab.editing)
+            // AI モデルの管理は Vantage だけ
+            if model.has(.aiModelManagement) {
+                AIModelSettingsTab()
+                    .tabItem { Label(L("settings.tab.ai"), systemImage: "cpu") }
+                    .tag(Tab.ai)
+            }
+            NotificationSettingsTab()
+                .tabItem { Label(L("settings.tab.notifications"), systemImage: "bell") }
+                .tag(Tab.notifications)
             FontSettingsTab()
                 .tabItem { Label(L("settings.tab.font"), systemImage: "textformat") }
                 .tag(Tab.font)
@@ -21,7 +34,7 @@ struct SettingsView: View {
                 .tabItem { Label(L("settings.tab.theme"), systemImage: "paintpalette") }
                 .tag(Tab.theme)
         }
-        .frame(width: 520)
+        .frame(minWidth: 560)
     }
 }
 
@@ -78,8 +91,151 @@ private struct GeneralSettingsTab: View {
                 }
                 .padding(.top, 10)
             }
+            Section {
+                LabeledContent(L("settings.transfer")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Button(L("settings.transfer.export")) { model.exportSettings() }
+                            Button(L("settings.transfer.import")) { model.importSettings() }
+                        }
+                        SettingNote(text: L("settings.transfer.note"))
+                        if let message = model.settingsTransferMessage {
+                            Label(message, systemImage: "checkmark.circle")
+                                .appFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.top, 10)
+            }
         }
         .padding(20)
+    }
+}
+
+// MARK: - 編集
+
+/// 誤認識の候補・確からしさの表示・追加のフィラー
+private struct EditingSettingsTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        Form {
+            Section {
+                LabeledContent(L("settings.editing.confidence")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(L("settings.editing.showConfidence"), isOn: $settings.showsConfidence)
+                            .toggleStyle(.checkbox)
+                        SettingNote(text: L("settings.editing.confidence.note"))
+                    }
+                }
+            }
+            if model.has(.reviewCandidates) {
+            Section {
+                LabeledContent(L("settings.editing.review")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker(L("settings.editing.review"), selection: $settings.reviewThreshold) {
+                            ForEach(ReviewThreshold.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        .pickerStyle(.radioGroup)
+                        .labelsHidden()
+                        SettingNote(text: L("settings.editing.review.note"))
+                    }
+                }
+                .padding(.top, 10)
+            }
+            }
+            if model.has(.fillerRemoval) {
+            Section {
+                LabeledContent(L("settings.editing.fillers")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        TextField(L("settings.editing.fillers"), text: $settings.extraFillers,
+                                  prompt: Text(L("settings.editing.fillers.placeholder")), axis: .vertical)
+                            .labelsHidden()
+                            .lineLimit(2 ... 4)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 320)
+                        SettingNote(text: L("settings.editing.fillers.note"))
+                    }
+                }
+                .padding(.top, 10)
+            }
+            }
+        }
+        .padding(20)
+    }
+}
+
+// MARK: - 通知
+
+/// 処理の終わりなどを macOS の通知で知らせる（既定はすべてオフ）
+private struct NotificationSettingsTab: View {
+    @Environment(AppModel.self) private var model
+    private var notifications: NotificationService { .shared }
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        Form {
+            Section {
+                LabeledContent(L("settings.notify.events")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        toggle(L("settings.notify.batch"), $settings.notifyBatchFinished)
+                        toggle(L("settings.notify.live"), $settings.notifyLiveInterrupted)
+                        toggle(L("settings.notify.downloads"), $settings.notifyDownloads)
+                        SettingNote(text: L("settings.notify.note"))
+                    }
+                }
+            }
+            Section {
+                LabeledContent(L("settings.notify.options")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(L("settings.notify.onlyInactive"), isOn: $settings.notifyOnlyWhenInactive)
+                            .toggleStyle(.checkbox)
+                        Toggle(L("settings.notify.sound"), isOn: $settings.notificationSound)
+                            .toggleStyle(.checkbox)
+                    }
+                    .disabled(!settings.anyNotificationEnabled)
+                }
+                .padding(.top, 10)
+            }
+            if settings.anyNotificationEnabled {
+                Section {
+                    switch notifications.permission {
+                    case .denied:
+                        HStack(spacing: 8) {
+                            Label(L("settings.notify.denied"), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                                .appFont(.caption)
+                            Button(L("settings.notify.openSettings")) { notifications.openSystemSettings() }
+                                .controlSize(.small)
+                        }
+                    case .unsupported:
+                        Label(L("settings.notify.unsupported"), systemImage: "info.circle")
+                            .foregroundStyle(.secondary)
+                            .appFont(.caption)
+                    default:
+                        EmptyView()
+                    }
+                }
+                .padding(.top, 10)
+            }
+        }
+        .padding(20)
+        .task { await notifications.refreshPermission() }
+    }
+
+    private func toggle(_ title: String, _ binding: Binding<Bool>) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { binding.wrappedValue },
+            set: { on in
+                binding.wrappedValue = on
+                // オンにしたときに macOS の許可を求める（まだ決めていない場合だけ確認が出る）
+                if on { Task { await notifications.requestPermissionIfNeeded() } }
+            }
+        ))
+        .toggleStyle(.checkbox)
     }
 }
 

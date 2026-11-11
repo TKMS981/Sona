@@ -45,8 +45,8 @@ public final class AppleSpeechTranscriber: Transcriber, Sendable {
         // 結果は確定したものだけを受け取り、時刻順に集める
         let collector = Task { () throws -> [TranscriptSegment] in
             var pieces: [TranscriptSegment] = []
-            try await module.forEachResult { start, end, text in
-                pieces.append(TranscriptSegment(start: start, end: end, text: text))
+            try await module.forEachResult { start, end, text, confidence in
+                pieces.append(TranscriptSegment(start: start, end: end, text: text, confidence: confidence))
                 if total > 0 { progress(min(end / total, 0.999)) }
             }
             return pieces
@@ -89,10 +89,11 @@ private struct AppleSpeechModule: Sendable {
         if model.id == "apple-dictation" {
             kind = .dictation(DictationTranscriber(
                 locale: locale, contentHints: [], transcriptionOptions: [.punctuation],
-                reportingOptions: [], attributeOptions: [.audioTimeRange]))
+                reportingOptions: [], attributeOptions: [.audioTimeRange, .transcriptionConfidence]))
         } else {
             kind = .speech(SpeechTranscriber(
-                locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange]))
+                locale: locale, transcriptionOptions: [], reportingOptions: [],
+                attributeOptions: [.audioTimeRange, .transcriptionConfidence]))
         }
     }
 
@@ -103,9 +104,10 @@ private struct AppleSpeechModule: Sendable {
         }
     }
 
-    /// 確定した結果を、語句ごとに (開始秒, 終了秒, 文字列) で渡す。
+    /// 確定した結果を、語句ごとに (開始秒, 終了秒, 文字列, 確からしさ) で渡す。
     /// 1 つの結果に複数の文が含まれることがあるため、語句の時刻を使って文単位にまとめ直せるようにする。
-    func forEachResult(_ body: (TimeInterval, TimeInterval, String) -> Void) async throws {
+    /// 確からしさは OS が語句に付けたときだけ（付いていなければ nil）。
+    func forEachResult(_ body: (TimeInterval, TimeInterval, String, Double?) -> Void) async throws {
         switch kind {
         case .speech(let m):
             for try await r in m.results where r.isFinal { Self.split(r.text, range: r.range, body) }
@@ -115,23 +117,26 @@ private struct AppleSpeechModule: Sendable {
     }
 
     private static func split(_ text: AttributedString, range: CMTimeRange,
-                              _ body: (TimeInterval, TimeInterval, String) -> Void) {
-        var pieces: [(TimeInterval, TimeInterval, String)] = []
+                              _ body: (TimeInterval, TimeInterval, String, Double?) -> Void) {
+        var pieces: [(TimeInterval, TimeInterval, String, Double?)] = []
         var lastEnd = range.start.seconds
         for run in text.runs {
             let piece = String(text[run.range].characters)
+            let confidence = run.transcriptionConfidence.flatMap { $0.isFinite ? min(max($0, 0), 1) : nil }
             if let time = run.audioTimeRange, time.start.isNumeric, time.end.isNumeric {
                 lastEnd = time.end.seconds
-                pieces.append((time.start.seconds, time.end.seconds, piece))
+                pieces.append((time.start.seconds, time.end.seconds, piece, confidence))
             } else {
                 // 時刻のない部分（句読点など）は直前の語句の終わりに付ける
-                pieces.append((lastEnd, lastEnd, piece))
+                pieces.append((lastEnd, lastEnd, piece, confidence))
             }
         }
         if pieces.isEmpty || pieces.allSatisfy({ $0.0 == $0.1 }) {
-            body(range.start.seconds, range.end.seconds, String(text.characters))
+            let values = pieces.compactMap(\.3)
+            let mean = values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+            body(range.start.seconds, range.end.seconds, String(text.characters), mean)
         } else {
-            pieces.forEach { body($0.0, $0.1, $0.2) }
+            pieces.forEach { body($0.0, $0.1, $0.2, $0.3) }
         }
     }
 }

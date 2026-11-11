@@ -36,6 +36,11 @@ struct LiveTranscriptionView: View {
         .sheet(isPresented: $live.showConfirmation) {
             LiveConfirmationSheet()
         }
+        // 終了した結果の要約・重要な発言
+        .sheet(item: Binding(get: { model.analysisSheet == .live ? model.analysisSheet : nil },
+                             set: { model.analysisSheet = $0 })) { target in
+            AnalysisSheet(target: target)
+        }
         .alert(
             live.alert?.title ?? "",
             isPresented: Binding(get: { live.alert != nil }, set: { if !$0 { live.alert = nil } }),
@@ -584,6 +589,10 @@ private struct LiveSessionBody: View {
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
             Divider()
+            LiveQualityStrip()
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+            Divider()
             ZStack {
                 LiveTranscriptTextView(
                     confirmed: session.transcript.confirmed,
@@ -612,6 +621,82 @@ private struct LiveSessionBody: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
+        }
+    }
+}
+
+/// 認識品質・遅れの表示（測った値だけを出す。確からしさは Whisper が返した値の平均）
+private struct LiveQualityStrip: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let session = model.live.session
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let snapshot = session.quality.snapshot
+            let status = session.state == .finished || session.state == .paused
+                ? nil : session.qualityStatus(at: context.date)
+            HStack(spacing: 14) {
+                if let status {
+                    Label(L("live.quality.\(status.rawValue)"), systemImage: icon(status))
+                        .foregroundStyle(color(status))
+                        .appFont(.caption, weight: .semibold)
+                        .help(L("live.quality.\(status.rawValue).help"))
+                } else {
+                    Label(L("live.quality.summary"), systemImage: "gauge.with.dots.needle.33percent")
+                        .appFont(.caption, weight: .semibold)
+                        .foregroundStyle(.secondary)
+                }
+                metric(L("live.quality.latency"),
+                       snapshot.averageLatency.map { L("live.quality.seconds", format($0)) } ?? "—",
+                       help: L("live.quality.latency.help", snapshot.maxLatency.map(format) ?? "—"))
+                metric(L("live.quality.processing"),
+                       snapshot.averageProcessing.map { L("live.quality.seconds", format($0)) } ?? "—",
+                       help: L("live.quality.processing.help"))
+                if session.state.isCapturing {
+                    metric(L("live.quality.backlog"), L("live.quality.seconds", format(session.backlogSeconds)),
+                           help: L("live.quality.backlog.help"))
+                }
+                if let confidence = snapshot.averageConfidence {
+                    metric(L("live.quality.confidence"), L("common.percentShort", Int((confidence * 100).rounded())),
+                           help: L("live.quality.confidence.help"))
+                }
+                Spacer(minLength: 0)
+            }
+            .appFont(.caption)
+            .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(L("live.quality.accessibility"))
+    }
+
+    private func metric(_ title: String, _ value: String, help: String) -> some View {
+        HStack(spacing: 4) {
+            Text(title).foregroundStyle(.secondary)
+            Text(value).monospacedDigit()
+        }
+        .help(help)
+        .fixedSize()
+    }
+
+    private func format(_ seconds: TimeInterval) -> String {
+        String(format: "%.1f", seconds)
+    }
+
+    private func icon(_ status: LiveQualityMeter.Status) -> String {
+        switch status {
+        case .measuring: "hourglass"
+        case .good: "checkmark.circle.fill"
+        case .delayed: "tortoise.fill"
+        case .behind: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func color(_ status: LiveQualityMeter.Status) -> Color {
+        switch status {
+        case .measuring: .secondary
+        case .good: .green
+        case .delayed: .orange
+        case .behind: .red
         }
     }
 }
@@ -721,6 +806,17 @@ private struct LiveFooter: View {
                             Label(L("live.audio.menu"), systemImage: "waveform")
                         }
                         .fixedSize()
+                    }
+                    // 要約・重要な発言は Vantage だけ
+                    if model.has(.summary) {
+                        Button {
+                            model.analysisSheet = .live
+                        } label: {
+                            Label(L("live.analysis"), systemImage: "sparkles")
+                        }
+                        .fixedSize()
+                        .disabled(session.transcript.confirmed.isEmpty)
+                        .help(L("live.analysis.help"))
                     }
                     Menu {
                         ForEach(ExportFormat.allCases) { format in

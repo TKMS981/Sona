@@ -62,25 +62,46 @@ public struct ModelFile: Hashable, Sendable {
     }
 }
 
-/// 文字起こしモデル
+/// モデルの用途
+public enum ModelPurpose: String, Sendable {
+    /// 文字起こし
+    case transcription
+    /// 話者識別（文字起こしの結果に話者を付ける。sherpa-onnx で動かす）
+    case speakerDiarization
+    /// ローカルの言語モデル（AI の修正・整形・要約・翻訳。llama.cpp で動かす。`LocalLLMCatalog`）
+    case textGeneration
+}
+
+/// 文字起こしモデル（と、話者識別などの補助のモデル）
 public struct SpeechModel: Identifiable, Hashable, Sendable {
     public let id: String
+    /// 認識方式。補助のモデルでは、動かすライブラリが同じ方式（話者識別は sherpa-onnx なので ReazonSpeech）にする。
     public let engine: SpeechEngine
     /// ダウンロードするファイル（Apple のモデルは空）
     public let files: [ModelFile]
     /// 保存先フォルダ内のサブフォルダ（nil なら保存先の直下。Whisper は以前の版と同じ場所に置く）
     public let folder: String?
+    public let purpose: ModelPurpose
 
-    public init(id: String, engine: SpeechEngine, files: [ModelFile], folder: String? = nil) {
+    public init(id: String, engine: SpeechEngine, files: [ModelFile], folder: String? = nil,
+                purpose: ModelPurpose = .transcription) {
         self.id = id
         self.engine = engine
         self.files = files
         self.folder = folder
+        self.purpose = purpose
     }
 
-    /// 表示名と説明（表示言語に従う）
-    public var displayName: String { L("model.\(id).name") }
-    public var summary: String { L("model.\(id).summary") }
+    /// 表示名と説明（表示言語に従う。ローカルの言語モデルはモデル名）
+    public var displayName: String {
+        if purpose == .textGeneration, let llm = LocalLLMCatalog.all.first(where: { id.hasPrefix("llm-\($0.id)") }) {
+            return llm.displayName
+        }
+        return L("model.\(id).name")
+    }
+    public var summary: String {
+        purpose == .textGeneration ? "" : L("model.\(id).summary")
+    }
 
     public var isDownloadable: Bool { !files.isEmpty }
 
@@ -148,6 +169,23 @@ public enum ModelCatalog {
             reazonTokens,
         ], folder: "reazonspeech-k2-v2"),
     ]
+
+    /// 話者識別のモデル（文字起こしのモデルの一覧 `all` には含めない）。
+    /// - 発話区間の検出: pyannote segmentation-3.0（MIT、CNRS）を sherpa-onnx 用に変換したもの
+    /// - 話者の特徴: 3D-Speaker CAM++（中国語・英語で学習、Apache-2.0）
+    /// どちらも https://huggingface.co/csukuangfj の sherpa-onnx 用の変換済みファイルを、コミットを固定して取得する。
+    /// サイズと SHA-256 は LFS メタデータの値（取得して一致を確認、2026-11）。
+    public static let speakerDiarization = SpeechModel(id: "speaker-diarization", engine: .reazonSpeech, files: [
+        ModelFile(name: "pyannote-segmentation-3-0.onnx",
+                  url: URL(string: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/9403a6902bb58e3d5ae8c7e77c3422de279db2e0/model.onnx")!,
+                  sizeBytes: 5_992_913, sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079"),
+        ModelFile(name: "3dspeaker-campplus-zh-en-advanced.onnx",
+                  url: URL(string: "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/0743f301363dec56491a490f6d6cbc9d67f9a3bf/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")!,
+                  sizeBytes: 28_281_164, sha256: "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2"),
+    ], folder: "speaker-diarization", purpose: .speakerDiarization)
+
+    /// 文字起こし以外の、ダウンロードして使うモデル
+    public static let auxiliary: [SpeechModel] = [speakerDiarization]
 
     /// macOS 標準の音声認識。言語データは OS がダウンロード・管理する。
     static let apple: [SpeechModel] = [

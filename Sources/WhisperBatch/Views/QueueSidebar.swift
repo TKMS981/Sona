@@ -23,6 +23,8 @@ struct QueueSidebar: View {
                             .tag(item.id)
                             .transition(motion.rowTransition)
                     }
+                    // ドラッグで順番を変えられる（待機中の項目は上から順に処理する）
+                    .onMove { model.moveItems(fromOffsets: $0, toOffset: $1) }
                 }
                 // ファイルの追加・削除で行が短くフェード（とスライド）して出入りする
                 .animation(motion.listChange, value: model.queue.items.map(\.id))

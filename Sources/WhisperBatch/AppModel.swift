@@ -111,6 +111,48 @@ final class AppModel {
     var showModelManager = false
     var downloadConfirmation: SpeechModel?
     var alert: AlertMessage?
+    /// 話者識別の画面を開いている項目
+    var speakerSheet: SheetTarget?
+    /// フィラー除去の画面を開いている項目
+    var fillerSheet: SheetTarget?
+    /// 要約・AI の画面の対象
+    var analysisSheet: AnalysisTarget?
+
+    struct SheetTarget: Identifiable, Equatable {
+        let id: UUID
+    }
+
+    /// 要約・重要な発言を作る対象（キューの項目か、ライブ文字起こしの結果）
+    enum AnalysisTarget: Identifiable, Equatable {
+        case item(UUID)
+        case live
+        var id: String {
+            switch self {
+            case .item(let id): id.uuidString
+            case .live: "live"
+            }
+        }
+    }
+
+    /// 話者識別の進み具合（項目ごと）
+    struct SpeakerJob: Equatable {
+        var phase: SpeakerIdentificationPhase
+        var progress: Double
+    }
+    var speakerJobs: [UUID: SpeakerJob] = [:]
+    @ObservationIgnored var speakerTasks: [UUID: Task<Void, Never>] = [:]
+    /// 設定の書き出し・読み込みの結果（設定画面に表示する）
+    var settingsTransferMessage: String?
+    /// 読み込んでいるローカルの言語モデル（表示用）
+    var loadedAIModelID: String?
+    /// AI の書き換え（誤認識の修正・文章の整形）の画面
+    var rewriteSheet: RewriteSheetTarget?
+
+    struct RewriteSheetTarget: Identifiable, Equatable {
+        let itemID: UUID
+        let task: AITask
+        var id: String { "\(itemID.uuidString)-\(task.rawValue)" }
+    }
 
     struct AlertMessage: Identifiable {
         let id = UUID()
@@ -133,7 +175,22 @@ final class AppModel {
         // （終了したプロセスのものだけ。同時に動いている別のコピーのファイルは消さない）
         ConversionWorkspace.removeAbandonedFiles()
         LiveRecordingWorkspace.removeAbandonedFiles()
+        DragExportWorkspace.removeAbandonedFiles()
         live.isBatchRunning = { [weak self] in self?.isRunning ?? false }
+        // 通知（設定でオンにしたものだけ）
+        live.session.onInputInterrupted = { [settings] message in
+            guard settings.notifyLiveInterrupted else { return }
+            NotificationService.shared.post(title: L("notify.live.title"), body: message, settings: settings)
+        }
+        models.onDownloadFinished = { [settings] model, failure in
+            guard settings.notifyDownloads else { return }
+            if let failure {
+                NotificationService.shared.post(title: L("notify.download.failed", model.displayName), body: failure, settings: settings)
+            } else {
+                NotificationService.shared.post(title: L("notify.download.done", model.displayName),
+                                                body: L("notify.download.doneBody"), settings: settings)
+            }
+        }
     }
 
     /// 表示言語を切り替える（保存は SettingsStore が行う）
@@ -239,7 +296,18 @@ final class AppModel {
         if queue.items.isEmpty { lastOutcome = nil; addNotice = nil }
     }
 
+    /// やり直す。編集・話者名・要約がある結果は消えるので、先に確認する。
     func retry(_ ids: Set<UUID>) {
+        let annotated = queue.items.filter { ids.contains($0.id) && $0.status == .completed && !$0.annotations.isEmpty }
+        if !annotated.isEmpty {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = L("retry.edited.title", annotated.count)
+            alert.informativeText = L("retry.edited.message")
+            alert.addButton(withTitle: L("action.retry"))
+            alert.addButton(withTitle: L("common.cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
         if transcription.retry(ids) > 0 { lastOutcome = nil }
     }
 
@@ -265,7 +333,11 @@ final class AppModel {
         lastOutcome = nil
         lastSaveMessage = nil
         transcription.start(model: selectedModel, language: effectiveLanguage, decoding: whisperDecoding) { [weak self] outcome in
-            if let outcome { self?.lastOutcome = outcome }
+            guard let self, let outcome else { return }
+            lastOutcome = outcome
+            if settings.notifyBatchFinished {
+                NotificationService.shared.post(title: L("notify.batch.title"), body: outcome.message, settings: settings)
+            }
         }
     }
 
@@ -277,6 +349,9 @@ final class AppModel {
     func shutdown() async {
         models.cancelAllDownloads()
         transcription.cancel()
+        speakerTasks.values.forEach { $0.cancel() }
+        for task in speakerTasks.values { await task.value }
+        await SonaRuntime.ai?.releaseTextModel()
         await live.shutdown()
         mp3ExportTasks.values.forEach { $0.cancel() }
         await transcription.waitUntilFinished()
@@ -284,7 +359,7 @@ final class AppModel {
         ConversionWorkspace.removeOwnFiles()
     }
 
-    var hasActiveWork: Bool { isRunning || !mp3ExportTasks.isEmpty || live.isActive }
+    var hasActiveWork: Bool { isRunning || !mp3ExportTasks.isEmpty || live.isActive || !speakerTasks.isEmpty }
 
     // MARK: 動画の音声を MP3 で保存（利用者が明示的に選んだときだけ）
 

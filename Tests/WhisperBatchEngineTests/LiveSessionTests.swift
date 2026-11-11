@@ -477,3 +477,38 @@ struct LiveInputConversionTests {
         #expect(peak > 0.2 && peak < 0.55)
     }
 }
+
+// MARK: - 認識品質・遅れの表示
+
+extension LiveSessionTests {
+    @Test func recordsLatencyAndProcessingTime() async {
+        let source = FakeSource(.window)
+        let session = makeSession(recognizer: FakeRecognizer(delay: .milliseconds(20)))
+        await session.start(configuration([source]))
+        #expect(session.qualityStatus() == .measuring)
+        for i in 0 ..< 2 { await feed(source, voiced(1.0, index: i) + silence(1.0)) }
+        #expect(await waitUntil { session.transcript.confirmed.count == 2 })
+        let snapshot = session.quality.snapshot
+        // 測った値だけを持つ（偽の認識器は確からしさを返さないので nil）
+        #expect((snapshot.averageProcessing ?? 0) >= 0.02)
+        #expect(snapshot.averageLatency != nil && snapshot.averageLatency! >= 0)
+        #expect(snapshot.averageConfidence == nil)
+        #expect(session.qualityStatus() != .measuring)
+        await session.finish()
+        // 新しいセッションでは記録を消す
+        session.reset()
+        #expect(session.quality.snapshot.averageLatency == nil)
+    }
+
+    @Test func interruptionIsReportedForNotifications() async {
+        let source = FakeSource(.window)
+        let session = makeSession()
+        var messages: [String] = []
+        session.onInputInterrupted = { messages.append($0) }
+        await session.start(configuration([source]))
+        source.report(.stopped(.targetClosed))
+        #expect(await waitUntil { !messages.isEmpty })
+        #expect(messages.first?.isEmpty == false)
+        await session.finish()
+    }
+}

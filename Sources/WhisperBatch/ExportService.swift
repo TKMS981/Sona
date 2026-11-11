@@ -14,19 +14,23 @@ enum ExportService {
 
     // MARK: 1 件
 
+    /// 編集を反映した結果を書き出す
     static func exportSingle(_ item: QueueItem, format: ExportFormat, includeTimestamps: Bool) async -> Outcome {
-        guard let transcript = item.transcript else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
+        guard let transcript = item.editedTranscript else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
         return await export(transcript, suggestedName: ExportNaming.baseName(for: item.displayName, format: format),
-                            format: format, includeTimestamps: includeTimestamps)
+                            format: format, includeTimestamps: includeTimestamps, context: item.exportContext)
     }
 
     // MARK: ライブ文字起こし
 
     /// ライブ文字起こしの結果を書き出す（形式は一括処理の結果と同じ）
-    static func exportLive(_ transcript: Transcript, startedAt: Date?, format: ExportFormat, includeTimestamps: Bool) async -> Outcome {
+    static func exportLive(_ transcript: Transcript, startedAt: Date?, format: ExportFormat, includeTimestamps: Bool,
+                           analysis: TranscriptAnalysis? = nil) async -> Outcome {
         guard !transcript.segments.isEmpty else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
-        let name = ExportNaming.liveFileName(date: startedAt ?? Date()) + "." + format.fileExtension
-        return await export(transcript, suggestedName: name, format: format, includeTimestamps: includeTimestamps)
+        let stem = ExportNaming.liveFileName(date: startedAt ?? Date())
+        let name = stem + "." + format.fileExtension
+        return await export(transcript, suggestedName: name, format: format, includeTimestamps: includeTimestamps,
+                            context: ExportContext(title: stem, analysis: analysis?.isEmpty == false ? analysis : nil))
     }
 
     /// ライブ文字起こしの音声（WAV）の保存先を選ぶ。キャンセルなら nil。
@@ -43,7 +47,7 @@ enum ExportService {
     }
 
     private static func export(_ transcript: Transcript, suggestedName: String, format: ExportFormat,
-                               includeTimestamps: Bool) async -> Outcome {
+                               includeTimestamps: Bool, context: ExportContext) async -> Outcome {
         let panel = NSSavePanel()
         panel.title = L("export.single.panelTitle")
         panel.nameFieldStringValue = suggestedName
@@ -52,7 +56,7 @@ enum ExportService {
         panel.isExtensionHidden = false
         // 既存ファイルを選んだ場合の上書き確認は NSSavePanel が表示する
         guard await run(panel) == .OK, let url = panel.url else { return .cancelled }
-        let text = TranscriptFormatter.format(transcript, as: format, includeTimestamps: includeTimestamps)
+        let text = TranscriptFormatter.format(transcript, as: format, includeTimestamps: includeTimestamps, context: context)
         do {
             try await write(text, to: url)
             return .saved(L("export.single.saved", url.lastPathComponent))
@@ -85,7 +89,7 @@ enum ExportService {
     // MARK: 個別にまとめて書き出し
 
     static func exportEach(_ items: [QueueItem], format: ExportFormat, includeTimestamps: Bool) async -> Outcome {
-        let items = items.filter { $0.transcript != nil }
+        let items = items.filter { $0.editedTranscript != nil }
         guard !items.isEmpty else { return .failed(WhisperBatchError.nothingToExport.errorDescription!) }
         let panel = NSOpenPanel()
         panel.title = L("export.each.panelTitle")
@@ -115,7 +119,8 @@ enum ExportService {
 
         var failures: [String] = []
         for (item, name) in zip(items, plan.fileNames) {
-            let text = TranscriptFormatter.format(item.transcript!, as: format, includeTimestamps: includeTimestamps)
+            let text = TranscriptFormatter.format(item.editedTranscript!, as: format, includeTimestamps: includeTimestamps,
+                                                  context: item.exportContext)
             do {
                 try await write(text, to: folder.appendingPathComponent(name))
             } catch {
@@ -201,11 +206,12 @@ enum ExportService {
         }
     }
 
-    private static func contentType(for format: ExportFormat) -> UTType {
+    static func contentType(for format: ExportFormat) -> UTType {
         switch format {
         case .plainText: .plainText
         case .srt: UTType(filenameExtension: "srt", conformingTo: .plainText) ?? .plainText
         case .vtt: UTType(filenameExtension: "vtt", conformingTo: .plainText) ?? .plainText
+        case .markdown: UTType(filenameExtension: "md", conformingTo: .plainText) ?? .plainText
         }
     }
 }

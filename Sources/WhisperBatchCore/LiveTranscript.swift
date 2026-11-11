@@ -65,7 +65,7 @@ public struct LiveTranscript: Equatable, Sendable {
             if let last = confirmed.last, segment.start < last.end - 0.05,
                let trimmed = LiveText.removingOverlap(of: last.text, from: segment.text) {
                 if trimmed.isEmpty { continue }
-                segment = TranscriptSegment(start: segment.start, end: segment.end, text: trimmed)
+                segment = segment.with(text: trimmed)
             }
             confirmed.append(segment)
         }
@@ -94,7 +94,7 @@ public struct LiveTranscript: Equatable, Sendable {
 
 extension TranscriptSegment {
     public func shifted(by offset: TimeInterval) -> TranscriptSegment {
-        TranscriptSegment(start: start + offset, end: end + offset, text: text)
+        with(start: start + offset, end: end + offset)
     }
 }
 
@@ -362,7 +362,8 @@ public enum LiveText {
         var result: [TranscriptSegment] = []
         for (i, text) in texts.enumerated() {
             let end = i == texts.count - 1 ? segment.end : start + duration * Double(visibleCount(text)) / total
-            result.append(TranscriptSegment(start: start, end: end, text: text))
+            // 文ごとに分けると語句の確からしさは合わなくなるので外す（区間の確からしさと話者は残す）
+            result.append(segment.with(text: text).with(start: start, end: end))
             start = end
         }
         return result

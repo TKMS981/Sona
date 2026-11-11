@@ -71,14 +71,17 @@ private struct ItemDetail: View {
             if item.isVideo {
                 MP3ExportRow(item: item)
             }
-            if let transcript = item.transcript, item.status == .completed {
+            if let transcript = item.editedTranscript, item.status == .completed {
                 HStack(spacing: 10) {
                     Toggle(L("detail.showTimestamps"), isOn: $showTimestamps)
                         .toggleStyle(.checkbox)
                         .fixedSize()
                     Spacer(minLength: 0)
+                    TranscriptDragHandle(item: item, includeTimestamps: showTimestamps)
                     Button {
-                        let text = TranscriptFormatter.plainText(transcript, includeTimestamps: showTimestamps)
+                        // 編集と話者名を反映した文をコピーする
+                        let text = TranscriptFormatter.plainText(transcript, includeTimestamps: showTimestamps,
+                                                                 speakerNames: item.annotations.speakerNames)
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(text, forType: .string)
                         copied = true
@@ -111,7 +114,13 @@ private struct ItemDetail: View {
         if item.isVideo { parts.append(L("detail.kind.video")) }
         if let d = item.duration { parts.append(L("detail.duration", TranscriptFormatter.clock(d))) }
         if let lang = item.transcript?.language { parts.append(L("detail.language", LanguageOption.displayName(forCode: lang))) }
-        if let t = item.transcript, item.status == .completed { parts.append(L("detail.segments", t.segments.count)) }
+        if let t = item.editedTranscript, item.status == .completed { parts.append(L("detail.segments", t.segments.count)) }
+        if item.status == .completed, !item.annotations.edits.isEmpty {
+            parts.append(L("detail.edited", item.annotations.edits.count))
+        }
+        if item.status == .completed, item.hasSpeakers, let t = item.transcript {
+            parts.append(L("detail.speakers", Set(t.segments.compactMap(\.speaker)).count))
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -170,11 +179,7 @@ private struct ItemDetail: View {
             }
         case .completed:
             if let transcript = item.transcript, !transcript.isEmpty {
-                TranscriptTextView(
-                    text: TranscriptFormatter.plainText(transcript, includeTimestamps: showTimestamps),
-                    font: typography.nsFont(size: NSFont.systemFontSize + 1),
-                    showsBackground: !hasCustomBackground
-                )
+                CompletedTranscriptView(item: item, original: transcript, showTimestamps: showTimestamps)
             } else {
                 ContentUnavailableView {
                     Label(L("detail.noSpeech.title"), systemImage: "speaker.slash")
@@ -252,6 +257,8 @@ struct TranscriptTextView: NSViewRepresentable {
     var font = NSFont.systemFont(ofSize: NSFont.systemFontSize + 1)
     /// false のときは背景を描かず、テーマの背景を透かす
     var showsBackground = true
+    /// 色や下線の付いた文字列（指定したときは text の代わりに表示する）
+    var attributed: NSAttributedString?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -276,6 +283,11 @@ struct TranscriptTextView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let textView = scroll.documentView as? NSTextView else { return }
         applyBackground(to: scroll, textView: textView)
+        if let attributed {
+            guard let storage = textView.textStorage, !storage.isEqual(to: attributed) else { return }
+            storage.setAttributedString(attributed)
+            return
+        }
         guard textView.string != text || textView.font != font else { return }
         apply(text, to: textView)
     }
@@ -286,6 +298,10 @@ struct TranscriptTextView: NSViewRepresentable {
     }
 
     private func apply(_ text: String, to textView: NSTextView) {
+        if let attributed {
+            textView.textStorage?.setAttributedString(attributed)
+            return
+        }
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 4
         style.paragraphSpacing = 4

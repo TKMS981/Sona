@@ -16,16 +16,19 @@
 
 ## インストール
 
-1. [Releases](https://github.com/TKMS981/whisper-batch/releases/latest) から `Sona-<バージョン>.dmg` をダウンロードします（1.1.1 までのリリースは旧名の `WhisperBatch-<バージョン>.dmg` です）。1.2.0 は動作確認の途中の**開発版（Pre-release）**で、`latest` のリンクには表示されません。[リリースの一覧](https://github.com/TKMS981/whisper-batch/releases)から選んでください。
-2. DMG を開き、「Sona」を「Applications」フォルダへドラッグします。旧名の「Whisper Batch」を使っていた場合は、後述「名称の変更（Whisper Batch → Sona）」も参照してください。
+1. [Releases](https://github.com/TKMS981/Sona/releases/latest) から、使うエディションの DMG をダウンロードします（下記「エディション」）。
+   - AI の機能を使う: `Sona-Vantage-<バージョン>.dmg`（アプリ名は「Sona」）
+   - AI の機能を使わない: `Sona-Air-<バージョン>.dmg`（アプリ名は「Sona Air」）
+   - 1.2.0 は旧形式の `Sona-1.2.0.dmg`（開発版）、1.1.1 までは旧名の `WhisperBatch-<バージョン>.dmg` です。[リリースの一覧](https://github.com/TKMS981/Sona/releases)から選べます。
+2. DMG を開き、「Sona」（または「Sona Air」）を「Applications」フォルダへドラッグします。Sona Vantage は、これまでの Sona・Whisper Batch と同じアプリとして設定とモデルを引き継ぎます。Sona Air は別のアプリ（Bundle ID が別）なので、Vantage と並べて入れられ、設定とモデルは別に持ちます。旧名の「Whisper Batch」を使っていた場合は、後述「名称の変更（Whisper Batch → Sona）」も参照してください。
 3. 初回は macOS が「開けません」「検証できません」と表示します（Developer ID 署名と公証をしていないため）。
    1. ダイアログを「完了」で閉じます。
    2. 「システム設定」→「プライバシーとセキュリティ」を開き、下の方にある「Sona」の「このまま開く」を押します。
    3. もう一度アプリを開き、確認ダイアログで「開く」を押します。
 
-   ターミナルを使う場合は `xattr -dr com.apple.quarantine "/Applications/Sona.app"` でも開けるようになります。
+   ターミナルを使う場合は `xattr -dr com.apple.quarantine "/Applications/Sona.app"`（Air は `"/Applications/Sona Air.app"`）でも開けるようになります。
 
-ダウンロードしたファイルは、リリースに添付した `.sha256` の値と `shasum -a 256 Sona-<バージョン>.dmg` の結果が一致するかで確認できます。
+ダウンロードしたファイルは、リリースに添付した `.sha256` の値と `shasum -a 256 <DMG のファイル名>` の結果が一致するかで確認できます。
 
 ## 名称の変更（Whisper Batch → Sona）
 
@@ -43,7 +46,8 @@
 - 保存先を変えていないので、データの移行処理は不要です。Sona を起動すると、これまでのモデルと設定がそのまま使われる設計です（旧アプリからの置き換えを実機で試したわけではありません）。
 - 古い `/Applications/Whisper Batch.app` は、Sona を入れたら削除してください。同じ Bundle ID のアプリが 2 つあると、macOS がどちらを開くかが分かりにくくなります。
 - macOS の「プライバシーとセキュリティ」の一覧には「Sona」と表示されます。アドホック署名のビルドは作り直すたびに別のアプリとして扱われることがあり、その場合は画面収録やマイクの許可を求め直されます（名前の変更とは関係なく、以前から同じです）。
-- ソース内部の名前（Swift のモジュール名 `WhisperBatchCore` / `WhisperBatchEngine`、`Sources/WhisperBatch/` などのフォルダ名、テスト用の環境変数 `WHISPER_BATCH_*`）と、GitHub のリポジトリ名（`whisper-batch`）は変えていません。
+- ソース内部の名前（Swift のモジュール名 `WhisperBatchCore` / `WhisperBatchEngine`、`Sources/WhisperBatch/` などのフォルダ名、テスト用の環境変数 `WHISPER_BATCH_*`）は変えていません。
+- GitHub のリポジトリ名は 2.0.0 で `whisper-batch` から `Sona` に変えました（`https://github.com/TKMS981/Sona`）。古い URL は GitHub が新しい URL へ転送します。手元の複製は `git remote set-url origin https://github.com/TKMS981/Sona.git` で新しい URL に変えられます。
 - ライセンス表記（MIT の著作権表示、同梱ライブラリのライセンス）はそのままです。「Whisper」「whisper.cpp」は、認識に使うモデルとライブラリの名前としてそのまま使います。
 
 ## 動作環境と、この環境での制約
@@ -75,6 +79,7 @@ open "build/Sona.app"
 | 取得するもの | 取得元 | 検証 |
 | --- | --- | --- |
 | whisper.cpp の XCFramework（約 66 MB） | GitHub（ggml-org/whisper.cpp のリリース b5454） | `Package.swift` のチェックサム（SwiftPM が検証） |
+| llama.cpp の XCFramework（約 65 MB、Vantage だけが使う） | GitHub（ggml-org/llama.cpp のリリース b11976） | `Package.swift` のチェックサム（SwiftPM が検証） |
 | LAME 4.0 のソース | SourceForge（公式配布物 lame-4.0.tar.gz） | アーカイブの SHA-256（`scripts/fetch-lame.sh`）と、展開したファイルの一覧（`ThirdParty/LAME/CLAME.sha256`） |
 
 LAME は `scripts/fetch-lame.sh` が取得し、必要なソースとヘッダーだけを `ThirdParty/LAME/Sources/CLAME/` に展開します（このフォルダは Git の追跡対象外）。配布物に含まれる `configure` などのスクリプトは実行せず、macOS 用の設定ヘッダー `ThirdParty/LAME/config.h` を使って SwiftPM でコンパイルします。`build-app.sh` と `test.sh` は自動で取得します。`swift build` を直接使う場合は先に `./scripts/fetch-lame.sh` を実行してください。
@@ -83,7 +88,7 @@ LAME は `scripts/fetch-lame.sh` が取得し、必要なソースとヘッダ�
 - 展開したファイルは、**展開済みのときも毎回**、Git で管理している一覧 `ThirdParty/LAME/CLAME.sha256`（各ファイルの SHA-256）と照合します。ファイルの変更・欠落・追加・シンボリックリンクがあればビルドを止めます（Finder が作る `.DS_Store` だけは数えません）。止まった場合は `rm -rf ThirdParty/LAME/Sources/CLAME` の後にやり直すと、公式の配布物から取得し直します。以前の版のスクリプトが作った目印のファイル（`.lame-4.0`）は使わずに消します。
 - 一覧はスクリプトが書き換えることはありません。LAME を更新するときや `ThirdParty/LAME/config.h` を変えたときは、`./scripts/fetch-lame.sh --print-manifest`（アーカイブの SHA-256 を確かめてから組み立てた内容の一覧を標準出力に出す）の結果で一覧を更新し、差分を確認してからコミットしてください。
 
-生成物の `build/Sona.app` には、`whisper.framework` と `libLAME.dylib`（どちらも arm64）、日本語・英語の文字列、ライセンス表記が入ります。
+生成物の `build/Sona.app`（Vantage）には、`whisper.framework`・`llama.framework`・`libLAME.dylib`・`libsherpa-onnx-c-api.dylib`（どれも arm64）、日本語・英語の文字列、ライセンス表記が入ります。`WB_EDITION=air` で作る `build/Sona Air.app` には `llama.framework` を入れません。whisper.framework と llama.framework はそれぞれ ggml を内蔵しているため、同じ Swift のモジュールからは読み込みません（llama は `SonaLLM` だけが `internal import` します）。
 
 ビルドスクリプトは署名の前に、実行ファイルと `libLAME.dylib` からデバッグ用の参照情報を取り除きます（`strip -S -x`）。この情報にはソースやオブジェクトファイルの絶対パス（ビルドした Mac のユーザー名を含む）が入るためです。クラッシュ時のシンボル解決に使う dSYM は `.build/` にだけ残り、アプリには含めません。`.build/` の中身はローカルパスを含むので公開・配布しないでください。
 
@@ -147,6 +152,9 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 - ライブ文字起こしの品質評価（`Tests/WhisperBatchEngineTests/LiveQualityEvaluation.swift`）は、`WHISPER_BATCH_TEST_MODEL`、`WHISPER_BATCH_TEST_EVAL_SPEECH`（音声）、`WHISPER_BATCH_TEST_EVAL_REFERENCE`（正解の文章）を指定したときだけ実行されます。音量の変更（`_EVAL_GAIN_DB`）、合成の伴奏（`_EVAL_MUSIC_DB`）、語彙のヒント（`_EVAL_HINT`）、比較用の設定（`_EVAL_VARIANT`）などの指定はファイルの先頭に書いています
 - ReazonSpeech と Apple のテスト（`Tests/WhisperBatchEngineTests/OtherEngineTests.swift`）は、`WHISPER_BATCH_TEST_SPEECH`（日本語の音声）、`WHISPER_BATCH_TEST_LONG_SPEECH`（1 分以上の日本語の音声、任意）、`WHISPER_BATCH_TEST_REAZON_DIR`（ReazonSpeech のファイルを置いたフォルダ）、`WHISPER_BATCH_TEST_APPLE_SPEECH`（英語の音声）を指定したときだけ実行されます
 
+- 確からしさの結合テスト（`Tests/WhisperBatchEngineTests/FeatureIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_AUDIO_DIR` と `WHISPER_BATCH_TEST_MODEL`（Whisper）、`WHISPER_BATCH_TEST_REAZON_DIR`（ReazonSpeech k2 v2）、`WHISPER_BATCH_TEST_APPLE_CONFIDENCE`（英語の音声。Apple）を指定したときだけ実行されます
+- Vantage の AI の結合テスト（`Tests/SonaVantageAITests`）は、`WHISPER_BATCH_TEST_LLM_DIR`（カタログのファイル名の GGUF を置いたフォルダ。置いたモデルだけを試す）、`WHISPER_BATCH_TEST_DIARIZATION_DIR` と `WHISPER_BATCH_TEST_DIALOGUE`（話者識別）、`WHISPER_BATCH_TEST_ONDEVICE_AI=1`（Apple Intelligence）を指定したときだけ実行されます。ローカルの言語モデルの取得の中止・再開・照合を実際の通信で試すテスト（`Tests/WhisperBatchEngineTests/LocalLLMDownloadTests.swift`）は `WHISPER_BATCH_TEST_LLM_DOWNLOAD_DIR`（TinySwallow、約 1.1GB を取得）を指定したときだけ実行されます
+
 ## 使い方
 
 1. 音声・動画ファイルを追加します。
@@ -171,13 +179,139 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 - **削除・再試行**: 選択項目の削除（⌫）、待機中の一括削除、処理中以外の一括削除、失敗・キャンセルした項目の再試行。
 - キューと結果はアプリを終了すると消えます。処理中・変換中に終了しようとすると確認します。
 
+## エディション（Sona Air / Sona Vantage）
+
+同じソースから、2 つのエディションを作ります（2.0.0 から両方を配布）。権限（entitlements）と内部のモジュール名は両方とも同じです。
+
+| | Sona Vantage | Sona Air |
+| --- | --- | --- |
+| アプリ名・DMG | `Sona.app`・`Sona-Vantage-<版>.dmg` | `Sona Air.app`・`Sona-Air-<版>.dmg` |
+| Bundle ID | `com.example.WhisperBatch`（従来と同じ。設定・モデルを引き継ぐ） | `com.example.WhisperBatch.Air`（別のアプリ。設定・モデルは Air のコンテナに別に持つ） |
+
+| | Sona Air（AI なし） | Sona Vantage（AI 搭載） |
+| --- | --- | --- |
+| 文字起こし（Whisper・ReazonSpeech・Apple）・ライブ文字起こし | ✓ | ✓ |
+| 編集・部分修正・削除・原文の復元、確からしさの表示 | ✓ | ✓ |
+| ドラッグ＆ドロップ、TXT / SRT / WebVTT / Markdown の出力、通知、設定の書き出し・読み込み | ✓ | ✓ |
+| AI 誤認識修正（修正候補の確認・自動修正・区間ごとの修正案）、誤認識の候補（要確認）の表示 | — | ✓ |
+| AI 文章整形、フィラーの除去 | — | ✓ |
+| 話者の自動識別・話者別の表示 | — | ✓ |
+| 全文の要約・重要な発言・翻訳 | — | ✓ |
+| ローカル AI モデルの管理と切り替え（設定の「AI モデル」） | — | ✓ |
+
+- 構成: 画面（`WhisperBatch`）は両エディションで共通のライブラリで、AI の機能は `AIRuntime`（`WhisperBatchEngine` の中の取り決め）を通してだけ使います。AI の実装（llama.cpp・Apple Intelligence・話者識別）は `SonaLLM` と `SonaVantageAI` にあり、Vantage の実行ファイル（`Sources/SonaVantage`）だけがリンクします。Air の実行ファイル（`Sources/SonaAir`）は AI の実装を渡さずに起動し、AI の機能は表示しません。
+- Air は llama.cpp・FoundationModels にリンクしません（`scripts/build-app.sh` が確かめ、リンクしていればビルドを止めます。テストでもソースの import と Package.swift を確かめています）。sherpa-onnx は ReazonSpeech の文字起こしに使うため Air にも入りますが、話者識別のコードは含みません。
+- AI の処理の手順（分割・依頼の文・返答の読み取り・書き換えの検査・差分・モデルの選び方）は、AI のランタイムに依存しない形で `WhisperBatchCore` にあり、テストでは偽の生成器で確かめています。
+
+```sh
+./scripts/build-app.sh                    # Sona Vantage → build/Sona.app（従来と同じ成果物名）
+WB_EDITION=air ./scripts/build-app.sh     # Sona Air → build/Sona Air.app（Bundle ID com.example.WhisperBatch.Air）
+./scripts/make-dmg.sh                     # build/Sona-Vantage-<版>.dmg
+WB_EDITION=air ./scripts/make-dmg.sh      # build/Sona-Air-<版>.dmg
+```
+
+## ローカル AI モデル（Sona Vantage）
+
+AI の誤認識修正・文章整形・要約・重要な発言・翻訳は、この Mac に取得した言語モデル（llama.cpp で実行）か、Apple Intelligence の端末内のモデルで行います。どちらも音声・文字を外部へ送りません。
+
+### 調べた候補と選んだもの（2026-11）
+
+Hugging Face の公式・準公式のリポジトリを調べ、ライセンス・取得の制限（ゲート）・形式・アーキテクチャ（llama.cpp b11976 の対応）を確かめました。GGUF のメタデータは HTTP の範囲指定で先頭だけを取得して読み、チャットの形式は各 GGUF のテンプレートを描画して確かめています。モデル名だけで性能を判断せず、下の「この Mac での確認」に書いた範囲で試しました。
+
+| モデル | 配布元 | 用途 | サイズ（量子化） | ライセンス | 結果 |
+| --- | --- | --- | --- | --- | --- |
+| TinySwallow 1.5B Instruct | Sakana AI | 日本語・軽量 | 1.13 GB（Q5_K_M） | Apache-2.0 | 採用 |
+| LLM-jp-4.1 8B thinking | LLM-jp（NII） | 日本語・高性能 | 5.50 GB（Q4_K_M） | Apache-2.0 | 採用（研究用。下記の注意） |
+| LLM-jp-4.1 32B-A3B thinking | LLM-jp（NII） | 日本語 | 21.5 GB（Q4_K_M） | Apache-2.0 | 不採用（32GB の Mac でメモリの上限 60% を超える） |
+| Llama-3-ELYZA-JP-8B | ELYZA | 日本語 | 4.92 GB（Q4_K_M） | Llama 3 Community License | 採用 |
+| Sarashina2.2 3B Instruct | SB Intuitions | 日本語 | — | MIT | 不採用（公式の GGUF がない） |
+| Qwen3 1.7B / 4B / 8B | Qwen（Alibaba） | 多言語（軽量／標準／高性能） | 1.83 / 2.50 / 5.03 GB | Apache-2.0 | 採用 |
+| Gemma 4 E2B / E4B | Google（GGUF: ggml-org） | 多言語 | 2.84 / 4.59 GB（Q4_0） | Apache-2.0 | 採用 |
+| Granite 4.2 3B | IBM | 英語（日本語も試験済みとの記載） | 2.24 GB（Q4_K_M） | Apache-2.0 | 採用 |
+| Granite 4.2 8B | IBM | 英語 | 5.35 GB | Apache-2.0 | 不採用（3B と用途が重なる） |
+| Ministral 3 3B Instruct | Mistral AI | 英語・多言語・軽量 | 2.15 GB（Q4_K_M） | Apache-2.0 | 採用 |
+| Phi-4（14B） | Microsoft | 英語・高性能 | 9.05 GB（Q4_K） | MIT | 採用 |
+| gpt-oss 20B | OpenAI（GGUF: ggml-org） | 英語・高性能 | 12.1 GB（MXFP4） | Apache-2.0 | 採用 |
+| PLaMo 3 Translate 2B / 8B | Preferred Networks | 翻訳専用 | 1.81 / 5.28 GB（Q4_K_M） | PLaMo Community License | 採用（翻訳だけ） |
+| PLaMo 3 Translate 0.8B | Preferred Networks | 翻訳 | 0.57 GB | PLaMo Community License | 不採用（2B を軽量の候補にした） |
+| Gemma 3 / Llama 3.2 | Google / Meta | 多言語・英語 | — | Gemma Terms / Llama 3.2 License | 不採用（新しい版がある・取得に承認が必要） |
+
+- 実行形式: 採用したモデルはすべて GGUF を llama.cpp（公式の XCFramework、build b11976、2026-10-29。`Package.swift` のチェックサムで固定）で動かします。MLX 版などほかの形式もありますが、SwiftPM だけでビルドできて、選んだモデルがすべて動く llama.cpp にそろえました（Apple Intelligence は FoundationModels で動かします）。
+- llama.cpp のライブラリは Jinja のテンプレートを実行しないため、各モデルのテンプレートを描画した結果と同じ入力を系列ごとに組み立てます（`ChatFormat`）。思考（推論）を出力するモデルは、テンプレートの方法で思考を止めるか（Qwen3・Granite）、最終の回答だけを取り出します（LLM-jp-4.1・gpt-oss の Harmony 形式）。
+- LLM-jp-4.1 は、モデルカードに「研究開発向けで、そのまま製品に使うことは想定していない」「本家の llama.cpp ではトークナイザーの対応が足りず、llm-jp の分岐版が必要」とあります。本家の b11976 では特別なトークンの後に空白が入りますが、生成そのものは動いたので、Sona の読み取りで空白を許して扱っています。
+- ライセンスの条件: Llama-3-ELYZA-JP-8B は Meta Llama 3 Community License（表示などの条件あり）、PLaMo 3 Translate は PLaMo Community License（個人・非商用は自由、商用は売上 10 億円以下なら登録、超える場合は別途の契約）。取得の前の確認画面と設定の一覧に表示します。
+
+### モデルの管理（設定の「AI モデル」）
+
+- 取得・保持・削除・切り替え: モデルごとに、用途（日本語向け・英語向け・多言語・翻訳専用・軽量・高性能）、配布元、パラメーター数、量子化、ファイルの大きさ、動かすのに必要なメモリの目安、ライセンス（リンク）、取得元のリポジトリとリビジョン（リンク）、動作の確認の有無を表示します。
+- 取得は、確認画面（取得元・リビジョン・ライセンス・大きさ・保存先）で同意したときだけ行います。取得元は `huggingface.co` に限り（既存の接続先の確認をそのまま使う）、リビジョンを固定した URL から取得し、SHA-256 が一致したときだけ使えるようにします。読み込む前にも照合します。
+- 進み具合の表示・中止・再開: 中止すると再開用のデータを残し、「再開」で途中から取得します（検証前のファイルは残しません）。「最初から取得」も選べます。
+- 更新: モデルの一覧（リビジョンと SHA-256）はアプリに固定してあり、自動では更新しません。将来の版で一覧のリビジョンが変わり、以前のリビジョンのファイルが残っている場合は「更新があります」と表示し、更新するまでは以前のリビジョンを使います（以前のリビジョンの SHA-256 も一覧に残します）。
+- 削除は確認してから行います。読み込み中のモデルは解放してから削除します。
+- 保存先は文字起こしのモデルと同じフォルダの `llm/<モデル>/` です（`~/Library/Containers/<Bundle ID>/Data/Library/Application Support/WhisperBatch/Models/llm/`）。
+- モデルがなくても、文字起こし・編集・書き出しなどは従来どおり使えます。
+
+### モデルの選び方
+
+| 選び方 | 内容 |
+| --- | --- |
+| 自動（既定） | 文字起こしの言語と用途に合わせて、取得済みのモデルから選ぶ（日本語: 日本語向け → 多言語 → 英語向け、英語: 英語向け → 多言語 → 日本語向け、その他: 多言語 → 英語向け → 日本語向け。同じなら高性能のもの）。取得済みのモデルがなければ Apple Intelligence（使える場合）、それもなければ案内 |
+| 言語共通 | 1 つのモデル（または Apple Intelligence）を、どの言語・用途にも使う（翻訳専用のモデルは選べない） |
+| 用途別 | 誤認識の修正・文章の整形・要約（重要な発言を含む）・翻訳ごとに、自動・Apple Intelligence・特定のモデルを選ぶ |
+
+- 必要なモデルがないときは、取得はせずに「設定の『AI モデル』で取得してください（候補: …）」と案内し、設定を開くボタンを出します。
+- 翻訳は、翻訳専用のモデル（PLaMo）を優先します。翻訳専用のモデルはほかの用途には使いません。Apple Intelligence は翻訳には使いません。
+- 推論のときに読み込むモデルは 1 つだけです。別のモデルを使うときは前のモデルを解放してから読み込みます（設定の「解放」でいつでも解放できます。アプリの終了時にも解放します）。物理メモリの 60%（32GB の Mac で約 19GB）を超えそうなモデルは読み込みません。
+
+### AI の処理の決まり
+
+- 誤認識の修正と文章の整形は別の機能です（編集画面の「AI 誤認識修正」「AI 文章整形」）。誤認識の修正は、確からしさが低い語を手がかりに、聞き間違い・同音異義語の誤りだけを直します。文章の整形は、句読点を補い、フィラーと言い直しを除くだけで、語は変えません。
+- 反映のしかたは「候補を確かめてから反映」（既定。差分を見て、候補ごとに採用・却下）と「自動で反映」から選べます。どちらも原文は残り、区間ごと・今回の分・全体を原文に戻せます。
+- AI の候補は次の検査（`RewriteGuard`）を通ったものだけを使い、通らなかったものは理由とともに一覧に示して、原文のまま残します。
+  - 数字・日付・金額（全角・半角を区別しない、単位付きの漢数字を含む）、カタカナの語、大文字を含む英字の語（文頭を除く）、敬称の前の語（人名）、英語の人名・地名・組織名が、原文と同じだけ残っていること。原文にないものが現れないこと。
+  - 文章の整形は、原文の文字（英語などは語）の並びを削るだけで作れること（言い換え・追加をしていないこと）。
+  - 誤認識の修正は、変えた文字が全体の 3 割以下であること。
+- 依頼の文でも、人名・地名・製品名・数字・日付・金額を推測で変えない、原文にない情報を足さない、判断できない文は出力しない（原文のまま）ことを指示しています。
+- 長い文字起こしは、モデルの文脈の長さに合わせて区切り、1 つずつ順に処理します（同時に複数を処理しません）。
+- 重要な発言は AI に番号を選ばせ、文は文字起こしのものをそのまま使います。翻訳は原文を変えず、訳文を別に表示します（Markdown で書き出すと入ります）。
+- Apple Intelligence は FoundationModels の端末内のモデル（`SystemLanguageModel.default`）だけを使います。macOS 27 の FoundationModels には Private Cloud Compute 上のサーバーのモデル（`PrivateCloudComputeLanguageModel`）もありますが、このアプリはその型を参照しません（テストでソースを確かめています）。
+
+### この Mac での確認（2026-11、Apple M5 / 32GB / macOS 27.2）
+
+採用した 14 モデルをすべて取得して SHA-256 を照合し、llama.cpp b11976 で読み込んで、合成した短い文字起こし（日本語 5 文・英語 4 文）で、日本語と英語の要約・重要な発言・文章の整形・誤認識の修正・翻訳を試しました（`Tests/SonaVantageAITests/LocalLLMIntegrationTests.swift`）。どのモデルも特別なトークンや思考を含まない回答を返し、検査を通った候補だけが残ることを確かめました。1 回の処理は 0.3〜10 秒程度でした（Phi-4 が最も遅い）。
+
+- 気づいた点: Qwen3 1.7B は日本語の要約に中国語の字（「广告」）が混ざることがありました。誤認識の修正では、モデルによって「来週の会議出また報告します」を「会議出席報告します」のように誤って直す候補があり、検査（変更の大きさ・守る語）では止められない種類の誤りでした（正しく「会議でまた」と直したのは Ministral 3 3B・Gemma 4 E4B）。既定を「候補を確かめてから反映」にしているのはこのためです。
+- 切り替えの確認: TinySwallow を読み込んだ後に Qwen3 1.7B に切り替えると前のモデルが解放され、解放後はプロセスのメモリが 1,042MB → 100MB に戻りました。
+- 中止: 生成の途中で中止すると 0.01 秒以内に止まりました。
+- 取得の中止と再開: Hugging Face から TinySwallow を取得し、338MB で中止 → 再開用のデータで 338MB から再開 → SHA-256 の照合まで通りました。
+- 実際の録音の文字起こしでの、AI の修正・整形・要約の精度は確かめていません。
+
+## 結果の編集・話者・要約
+
+完了した結果は、右側の上部の「テキスト／区間（編集）」で表示を切り替えます。どの処理もこの Mac の中で行い、音声も文字も外部へ送りません。編集・確からしさ・ドラッグ＆ドロップ・ライブの品質表示は Air と Vantage の両方、フィラーの除去・誤認識の候補・話者・要約・AI の機能は Vantage だけです。
+
+- **編集**: 「区間（編集）」で、区間ごとに文を直す（ダブルクリックまたは鉛筆のボタン。Return で確定、Esc で取り消し、空にすると削除）・削除する。認識した原文は書き換えずに残し、区間ごと・全体を「原文に戻す」で戻せます。書き出し・コピー・統合保存・ドラッグでの書き出しには、編集を反映した文を使います。再試行すると結果と一緒に編集も消えるので、その前に確認します。
+- **フィラーの除去**: 「えー」「えーと」「あのー」「うーん」「um」「uh」などを、変わる区間を一覧で確かめてから取り除きます（後から原文に戻せます）。「あの人」「その件」のような語を消さないよう、「あの」「その」「まあ」は後ろに「ー」・読点・空白が続くときだけ消します。設定の「編集」で語を追加できます（前後が句読点・空白のときだけ消します）。
+- **確からしさ**: 認識方式が値を返したときだけ、区間ごとの確からしさ（%）と、確からしさが低い語の下線を表示します。Whisper はトークン確率の平均、ReazonSpeech はトークンの対数確率から求めた確率の平均、Apple の音声認識は語句の confidence の平均です。正解率ではなく、モデル自身の確からしさです。値が返らない場合は何も表示しません。
+- **誤認識の候補**: ①確からしさが低い語（基準は設定の「編集」で 30% / 50% / 70% 未満から選ぶ）、②同じ並びが何度も続く区間（Whisper の繰り返しの誤り）、③長さに対して文字が多すぎる区間（1 秒 25 文字超。無音から文を作る誤認識の兆候）を「要確認」として示します。「要確認のみ」で絞り込めます（Vantage）。AI のモデルが使える場合は、前後の文を手がかりにした修正案（ボタン）を出せます。置き換えるかどうかは利用者が選びます。
+- **話者**: 「話者」から、声の特徴で話者を自動で分けます（pyannote segmentation-3.0 + 3D-Speaker CAM++ を sherpa-onnx で実行。初回だけ約 34MB のモデルを Hugging Face から取得）。話者ごとに色分けし（名前も必ず表示）、名前を付け、話者ごとの発言一覧・発言数・話した時間を表示します。区間ごとに話者を手で直せます。人数が分かっている場合は指定すると精度が上がります。音声全体を一度に読み込むため、2 時間までの音声に対応します。
+- **要約・重要な発言**: 「要約・AI」から作ります。方法は 2 つです。
+  - AI: 設定の「AI モデル」の選び方に従って、ローカルの言語モデルか Apple Intelligence（端末内のモデル）で全文を要約し、重要な発言を選びます。長い文字起こしは区切って要約してからまとめます。重要な発言は AI に番号を選ばせ、文は文字起こしのものをそのまま使います（AI が作った文を「発言」として出さないため）。同じ画面で翻訳もできます（原文は変えません）。文章の整形は編集画面の「AI 文章整形」に移しました。
+  - 簡易抽出（AI なし）: 話題の中心になる語を多く含む文と、「決定」「期限」「お願い」「課題」「数値」などの語を含む文を、文字起こしから選びます（言い換えません）。どの Mac でも使えます。
+  作った要約と重要な発言は、Markdown で書き出すと一緒に入ります。ライブ文字起こしの結果でも、終了後に作れます（ライブの結果の編集・話者識別には対応していません）。
+- **ドラッグ＆ドロップ**: 結果の上部の「ドラッグで書き出し」を Finder などへドラッグすると、選んだ形式（txt / srt / vtt / md）のファイルとして書き出します（一時ファイルは終了時に削除）。キューの項目はドラッグで並べ替えられ、待機中の項目は上から順に処理します。
+- **ライブ文字起こしの品質表示**: 取り込み中は、全体の状態（良好・遅れ気味・追いついていない）と、確定までの遅れ（話し終わりから文が確定するまで、直近 20 文の平均）、認識 1 回の処理時間、未処理の音声の長さ、確からしさ（Whisper が返したトークン確率の平均）を表示します。どれも測った値だけで、推測した値は出しません。
+
 ## 設定（⌘,）
 
 - **一般**
   - 表示言語（下の「表示言語」を参照）
   - **自動開始**: 「ファイルを追加したらすぐに文字起こしを開始する」をオンにすると、ドロップや「ファイルを追加…」の時点で処理を始めます（既定はオフ）。処理中に追加したファイルは今の処理の続きで扱います。モデルが未取得などで開始できないときは、その理由をキューの上に表示します。
   - **Whisper の認識**: 「精度優先（Beam Search）」（既定。ビーム幅 5）と「速度優先（Greedy）」から選びます。Whisper を使うときだけ反映します。Apple M5 / Large v3 Turbo で 64 秒の日本語音声を試したところ、速度優先は約 15% 速く（2.4 秒 → 2.0 秒）、文章はほぼ同じでしたが、字幕の 1 区間が長くなりました（18 区間 → 8 区間）。
+  - **設定のファイル**: 設定を JSON ファイルに書き出し・読み込みます（別の Mac への移行やバックアップ用）。読み込むときは項目ごとに値を確かめ、正しくない値・この Mac にない書体などは読み飛ばして件数を表示します。ゴーストモードと背景画像は含めません。
 - **ライブ**: ゴーストモード（アプリ内の録音表示を隠す。既定はオフ）と、ライブ文字起こし中だけ効く停止・表示のショートカット（下の「ライブ文字起こし」を参照）
+- **編集**: 確からしさの表示のオン・オフ（既定はオン）、「要確認」にする基準（30% / 50% / 70% 未満、既定は 50%）、追加のフィラー
+- **通知**（既定はすべてオフ。オンにしたときに macOS の許可を求めます）: 一括の文字起こし・話者識別が終わったとき、ライブ文字起こしの入力が止まったとき、モデルのダウンロードが終わったとき。「Sona を使っているときは通知しない」（既定はオン）と「音を鳴らす」（既定はオフ）を選べます。
 - **フォント**: 書体（インストール済みの書体から選択、既定はシステム標準）と文字の大きさ（小・標準・大・特大）。画面の文字と文字起こし結果の表示に使います。メニューなど macOS 標準の一部の部品は変わりません。保存するファイルには影響しません。
 - **テーマ**
   - **外観**: システムに合わせる / ライト / ダーク
@@ -488,6 +622,8 @@ WAV、MP3、M4A（AAC / ALAC）、AAC（ADTS）、AIFF、CAF、FLAC、Ogg Vorbis
 
 モデルはアプリに同梱していません。利用者が確認ダイアログで同意したときだけ、Hugging Face からダウンロードし、ファイルごとに SHA-256 を検証してから保存します。
 
+**話者識別**（「話者」の画面またはモデル管理の「話者識別」から取得。保存先は `Models/speaker-diarization/`、合計 34.3 MB）: `huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0`（コミット `9403a69`、`model.onnx` 5.99 MB、MIT）と `huggingface.co/csukuangfj/speaker-embedding-models`（コミット `0743f30`、`3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` 28.3 MB、Apache-2.0）。文字起こしのモデルの一覧には出ません。
+
 **Whisper**（`huggingface.co/ggerganov/whisper.cpp`、コミット `5359861` に固定）
 
 | モデル | ファイル | サイズ | 必要な空き容量の目安 |
@@ -520,8 +656,9 @@ WAV、MP3、M4A（AAC / ALAC）、AAC（ADTS）、AIFF、CAF、FLAC、Ogg Vorbis
 
 | 形式 | 内容 |
 | --- | --- |
-| テキスト (.txt) | 認識区間ごとに 1 行。オプションで各行にタイムスタンプ |
-| SRT (.srt) / WebVTT (.vtt) | 字幕形式（WebVTT の本文中の `-->` は `→` に置き換え） |
+| テキスト (.txt) | 認識区間ごとに 1 行。オプションで各行にタイムスタンプ。話者識別をした場合は行の頭に話者名 |
+| SRT (.srt) / WebVTT (.vtt) | 字幕形式（WebVTT の本文中の `-->` は `→` に置き換え）。話者名は SRT では本文の頭、WebVTT では `<v 話者名>` |
+| Markdown (.md) | 見出し（ファイル名）・言語・長さ・話者・要約・重要な発言（作った場合）・本文（話者名とタイムスタンプは太字）。本文の記号は Markdown として解釈されないようにエスケープ |
 | 統合ファイル (.txt) | 各結果を `[番号/件数] ファイル名` の見出しで区切り、指定した順に並べる（統合はテキストのみ） |
 | MP3（動画の音声） | 「音声を MP3 で保存…」を選んだときだけ。128 kbps、44.1 kHz |
 
@@ -530,6 +667,9 @@ UTF-8（BOM なし）・LF で、一時ファイル経由で置き換えるた�
 ## プライバシー
 
 - 文字起こしと動画の変換はすべてこの Mac 上で行います。音声・動画・認識結果・利用状況を外部へ送信しません。
+- AI の処理（誤認識の修正・文章の整形・要約・重要な発言・翻訳・修正案）は、この Mac に取得したローカルの言語モデル（llama.cpp）か、Apple Intelligence の端末内のモデル（Private Cloud Compute は使わない）か、AI を使わない簡易抽出で行い、文字起こしを外部へ送りません。話者識別もこの Mac の中で行います。ローカルの言語モデルの取得は、文字起こしのモデルと同じく `huggingface.co` からだけ、利用者が選んだときだけ行います。
+- 通知（既定はすべてオフ）には、ファイル名と処理の結果の概要だけを入れ、文字起こしの文は入れません。
+- 設定の書き出しファイル（JSON）には、ゴーストモード・背景画像・モデル・文字起こしの結果・ファイルの場所を含めません。語彙のヒントと追加のフィラーは含みます。
 - 通信するのはモデルのダウンロード時だけで、送るのはファイルの取得要求（`huggingface.co` への HTTPS GET）だけです。ダウンロード前に確認ダイアログを表示します。
 - 接続先は `huggingface.co` と `hf.co`（ファイルの実体の配信元。例: `us.aws.cdn.hf.co`）とそのサブドメインに、HTTPS でのみ限っています。最初の URL だけでなく、リダイレクト先と、中断したダウンロードの再開先も確かめ、それ以外への接続は中止します（公衆 Wi-Fi のログインページへの転送などで起こります）。Apple の言語データは macOS が Apple のサーバーから取得します（取得前に確認ダイアログを表示）。
 - Apple の音声認識（SpeechAnalyzer）は、Apple の説明では音声をサーバーに送らずこの Mac の上で処理します。言語データ（認識に使うモデル）の取得は macOS が行うもので、このアプリ自身の通信（Hugging Face からのモデルのダウンロード）とは別です。このアプリは言語データの取得を macOS に頼むだけで、その通信の内容には関わりません。
@@ -580,9 +720,9 @@ Developer ID で配布する場合の方針:
 
 配布の前に残っている作業:
 
-1. **Bundle ID を独自のものに変える**（現在は仮の `com.example.WhisperBatch`）。変えるとモデルの保存先（サンドボックスのコンテナ）も変わります。
+1. **Bundle ID を独自のものに変える**（現在は仮の `com.example.WhisperBatch`、Air は `com.example.WhisperBatch.Air`）。変えるとモデルの保存先（サンドボックスのコンテナ）も変わります。
 2. **他の人にアプリを配布する場合**は、Developer ID による署名と公証（notarization）が必要です（「Developer ID 署名と公証」の環境変数で行えます）。公証には Hardened Runtime が必要です。通常は `WB_DISABLE_LIBRARY_VALIDATION` を使わず、実際の証明書で動作を確認してください（上記「Hardened Runtime での動作」）。
-3. アプリを配布する場合は、必ず `scripts/build-app.sh` で作ったものを使ってください（デバッグ情報を取り除いているため）。`swift build` の出力や `.build/` 内のファイルにはローカルパスが含まれます。なお、同梱の `whisper.framework`（whisper.cpp 公式のビルド済みバイナリ）には、エラー表示用の文字列として whisper.cpp の CI 環境（GitHub Actions）のパスが含まれています。これは第三者のビルド環境の情報で、このアプリの開発者や利用者の情報ではありません。
+3. アプリを配布する場合は、必ず `scripts/build-app.sh` で作ったものを使ってください（デバッグ情報を取り除いているため）。`swift build` の出力や `.build/` 内のファイルにはローカルパスが含まれます。なお、同梱の `whisper.framework`（whisper.cpp 公式のビルド済みバイナリ）には、エラー表示用の文字列として whisper.cpp の CI 環境（GitHub Actions）のパスが含まれています。これは第三者のビルド環境の情報で、このアプリの開発者や利用者の情報ではありません（Vantage に同梱する `llama.framework` も同じ公式のビルド済みバイナリです）。
 
 ## 既知の制約・未対応
 
@@ -593,13 +733,20 @@ Developer ID で配布する場合の方針:
 - 表示言語の切り替え中に作成された一部の詳細メッセージ（ダウンロード失敗の詳細など）は、作成時の言語のまま残ることがあります。
 - ReazonSpeech は文の間の無音で区切って認識するため、間を置かずに話し続ける音声では、10 秒ごとに最も静かな位置で区切ります（語の途中で切れることがあります）。出力に句読点は付きません。
 - Apple の言語データの取得は macOS が行うため、進み方は OS 次第です（開発中、日本語の取得が 0% のまましばらく進まず、後でいつの間にか完了していたことがありました）。
-- 話者分離、翻訳、単語単位のタイムスタンプには対応していません。統合保存はテキスト形式のみです。
+- 翻訳、単語単位のタイムスタンプには対応していません。統合保存はテキスト形式のみです。
+- 話者識別は合成音声（`say` の 2 つの声が交互に話す 39 秒の音声）でだけ確認しました。実際の会議の録音、声が似ている人、同時に話している部分での精度は確認していません。ライブ文字起こしの話者識別・編集には対応していません。
+- Apple Intelligence による処理は、この Mac（Apple Intelligence が有効）でだけ確認しました。対応していない Mac では、ローカルの言語モデルか簡易抽出（AI なし）を使います。AI の結果には誤りが含まれることがあります。
+- ローカルの言語モデルは、合成した短い文で読み込みと生成を確かめただけです。実際の録音・長い文字起こしでの精度、長時間の連続処理での発熱・速度は確かめていません。誤認識の修正は、検査を通っても意味の違う直し方をすることがありました（上記「この Mac での確認」）。
+- 日本語の漢字だけの人名・地名は自動では判定できません（敬称の前の語・カタカナ・英語の固有名詞は守ります）。AI には変えないよう指示していますが、検査で止められない場合があります。
+- Sona Air は Bundle ID が別なので、Vantage（とこれまでの Sona・Whisper Batch）の設定と取得済みのモデルは引き継ぎません。Air では Whisper などのモデルを取得し直す必要があります。
+- 通知は .app として起動したときだけ使えます（開発時の実行ファイルでは使えません）。通知の許可の確認と実際の表示は、この環境では試していません。
 - ライブ文字起こしで、選んだウィンドウだけの音声を取り込むことはできません（macOS はウィンドウを持つアプリ全体の音声を渡します）。ライブ文字起こしは Whisper だけに対応し、ファイルの一括処理と同時には使えません。
 
 ## ソースの構成
 
 ```
-Package.swift                     whisper.cpp と sherpa-onnx の XCFramework（binaryTarget）、LAME（ローカルパッケージ）、3 つのターゲット
+Package.swift                     whisper.cpp・sherpa-onnx・llama.cpp の XCFramework（binaryTarget）、LAME（ローカルパッケージ）、
+                                  実行ファイル Sona（Vantage）と SonaAir（Air）
 Localization/<言語>.lproj/        表示文字列（日本語・英語）
 Sources/WhisperBatchCore/         UI に依存しないロジック（キュー・状態遷移・出力形式・チャンク境界・表示言語・ライブ文字起こしの確定の判定と音声の混合）
 Sources/WhisperBatchEngine/       AVFoundation・whisper.cpp・sherpa-onnx・Speech・MP3 変換・モデル取得
@@ -614,9 +761,13 @@ Sources/WhisperBatchEngine/       AVFoundation・whisper.cpp・sherpa-onnx・Spe
   TemporaryWorkspace.swift          プロセスごとの一時フォルダ（ライブの録音・変換用の MP3）
   ModelDownloader.swift             モデルの取得（接続先・大きさ・SHA-256 の確認）
   ModelStorage.swift                モデルの保存先、取得済みの判定、読み込み前の照合
+Sources/SonaLLM/                  ローカルの言語モデル（llama.cpp）の読み込み・推論・解放（Vantage だけ）
+Sources/SonaVantageAI/            Vantage の AI の実装（AIRuntime: ローカルの言語モデル・Apple Intelligence の端末内のモデル・話者識別）
+Sources/SonaVantage/、SonaAir/    エディションごとの起動（実行ファイル）
 Sources/WhisperBatch/Live/        ライブ文字起こしの画面側（ピッカー、ゴーストモード、ショートカット）
                                   （メインウインドウの入口と案内は Views/ContentView.swift）
-Sources/WhisperBatch/             SwiftUI アプリ（Views/Motion.swift にアニメーション、AppearanceSettings.swift に書体とテーマの設定）
+Sources/WhisperBatch/             SwiftUI の画面（両エディション共通のライブラリ。SonaRuntime.swift でエディションと AI の実装を受け取る。
+                                  Views/Motion.swift にアニメーション、AppearanceSettings.swift に書体とテーマの設定）
 ThirdParty/LAME/                  LAME をビルドする Package.swift、macOS 用 config.h、展開したソースの照合用の一覧 CLAME.sha256
                                   （ソースは取得スクリプトで展開）
 Tests/                            swift-testing のテスト

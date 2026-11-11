@@ -6,10 +6,10 @@ import WhisperBatchCore
 /// ファイル全体をメモリに展開しないので、長時間の音声でも使用メモリは読み出し単位分に収まる。
 ///
 /// 1 つのタスクの中で順番に使う前提のクラス（スレッドをまたいで同時に使わない）。
-final class AudioSampleReader {
-    static let sampleRate: Double = 16_000
+package final class AudioSampleReader {
+    package static let sampleRate: Double = 16_000
 
-    let duration: TimeInterval
+    package let duration: TimeInterval
     private let reader: AVAssetReader
     private let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
     private let fileName: String
@@ -17,7 +17,7 @@ final class AudioSampleReader {
     private var pendingOffset = 0
     private var finished = false
 
-    init(url: URL) async throws {
+    package init(url: URL) async throws {
         fileName = url.lastPathComponent
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw WhisperBatchError.fileNotFound(name: fileName)
@@ -68,7 +68,7 @@ final class AudioSampleReader {
     }
 
     /// 最大 `maxFrames` サンプルを読み出す。返る数が `maxFrames` より少なければ終端に達している。
-    func read(maxFrames: Int) async throws -> [Float] {
+    package func read(maxFrames: Int) async throws -> [Float] {
         var result: [Float] = []
         result.reserveCapacity(maxFrames)
         while result.count < maxFrames {
