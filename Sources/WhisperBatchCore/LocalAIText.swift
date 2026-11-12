@@ -36,6 +36,10 @@ public enum LocalAIText {
     /// 1 回に渡す文字数の上限（モデルの文脈の長さに収まるよう、指示と返答の分を残す）
     public static let chunkCharacters = 1_800
 
+    /// 指示・依頼文・返答の読み取り方の版。指示や読み取り方を変えたら上げる（AI の結果の再利用の条件に含める。
+    /// 指示と依頼文は全文も条件に含めるので、上げ忘れても別の文なら再利用しない）。
+    public static let promptVersion = "2026-11-12.2"
+
     /// 編集を反映した区間を行にする（削除した区間は含めない）
     public static func lines(original: Transcript, edits: TranscriptEdits, speakerNames: [Int: String]) -> [Line] {
         original.segments.enumerated().compactMap { i, segment in
@@ -305,6 +309,14 @@ public enum LocalAIText {
             result.append((index, String(match.2).trimmingCharacters(in: .whitespaces)))
         }
         return result
+    }
+
+    /// 誤認識の修正の返答から、依頼の行に付けた手がかり（「（確からしさが低い語: …）」）を書き写した部分を除く
+    /// （書き写したままだと、直した文が検査で「変更が大きすぎる」として使われないため）
+    public static func removingCorrectionHint(_ text: String) -> String {
+        guard let r = text.range(of: #"\s*(?:（確からしさが低い語[:：][^）]*）|\(low-confidence words: [^)]*\))\s*$"#,
+                                 options: .regularExpression) else { return text }
+        return String(text[..<r.lowerBound])
     }
 
     /// 理由の語を種類に直す（分からない語は nil）

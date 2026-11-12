@@ -137,7 +137,8 @@ public enum AITaskRunner {
             let originals = Dictionary(chunk.map { ($0.index, $0.text) }, uniquingKeysWith: { a, _ in a })
             for (index, text) in LocalAIText.parseNumbered(response, valid: Set(originals.keys)) {
                 guard let original = originals[index] else { continue }
-                let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let answer = task == .correction ? LocalAIText.removingCorrectionHint(text) : text
+                let cleaned = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard cleaned != original else { continue }
                 let violations = RewriteGuard.check(original: original, rewritten: cleaned, task: task)
                 if violations.isEmpty {

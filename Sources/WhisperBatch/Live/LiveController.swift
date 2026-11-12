@@ -36,6 +36,8 @@ final class LiveController {
     var lastSaveMessage: String?
     /// 終了した結果の要約・重要な発言（新しいセッションを始めると消える）
     var analysis = TranscriptAnalysis()
+    /// 新しいセッションを始めた・結果を消したときに呼ぶ（前の結果に対する AI の結果を再利用しないため）
+    @ObservationIgnored var onSessionReset: (() -> Void)?
 
     struct PermissionAlert: Identifiable {
         enum Kind { case microphone, screen }
@@ -209,6 +211,7 @@ final class LiveController {
         }
         lastSaveMessage = nil
         analysis = TranscriptAnalysis()
+        onSessionReset?()
         await session.start(.init(model: model, language: settings.language, sources: sources, labels: labels,
                                   windowID: windowID, recordsAudio: recordsAudio,
                                   vocabularyHint: settings.liveVocabularyHint))
@@ -262,6 +265,7 @@ final class LiveController {
         session.reset()
         lastSaveMessage = nil
         analysis = TranscriptAnalysis()
+        onSessionReset?()
     }
 
     func shutdown() async {

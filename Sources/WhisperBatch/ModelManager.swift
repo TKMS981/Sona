@@ -114,6 +114,21 @@ final class ModelManager {
             + LocalLLMCatalog.all.flatMap { m in [m.downloadModel] + m.previousFiles.map { m.downloadModel(for: $0) } }
     }
 
+    /// 取得済みで使えるローカルの言語モデルの id（以前のリビジョンが残っているものを含む）。
+    /// 画面を描くたびに呼ばれるので、状態の表が変わらない 1 秒の間は前に調べた結果を使う（ファイルを毎回調べない）。
+    func installedLLMIDs() -> Set<String> {
+        let current = states // 画面の更新のため、状態の表を参照する
+        let now = ContinuousClock.now
+        if let cached = installedLLMCache, cached.states == current, now - cached.at < .seconds(1) {
+            return cached.ids
+        }
+        let ids = Set(LocalLLMCatalog.all.filter { llmInstallation($0).usableModel != nil }.map(\.id))
+        installedLLMCache = (current, now, ids)
+        return ids
+    }
+
+    @ObservationIgnored private var installedLLMCache: (states: [String: State], at: ContinuousClock.Instant, ids: Set<String>)?
+
     /// ローカルの言語モデルの取得状況（画面の更新のため、状態の表も参照する）
     func llmInstallation(_ model: LocalLLM) -> ModelInstallation {
         _ = states[model.downloadModel.id]

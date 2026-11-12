@@ -264,7 +264,7 @@ struct AnalysisSheet: View {
                 let aiTask: AITask = job == .translation ? .translation : .summary
                 let method: AnalysisMethod = model.resolveAI(aiTask, languageCode: transcript.language) == .appleIntelligence
                     ? .onDeviceAI : .localModel
-                let generator = try await model.textGenerator(for: aiTask, languageCode: transcript.language)
+                let generator = try await model.textGenerator(for: aiTask, languageCode: transcript.language, scope: target.id)
                 switch job {
                 case .summary:
                     let summary = try await AITaskRunner.summarize(lines, generator: generator, languageCode: transcript.language,

@@ -645,7 +645,7 @@ private struct SuggestionPopover: View {
         .frame(width: 380)
         .task {
             do {
-                let generator = try await model.textGenerator(for: .correction, languageCode: language)
+                let generator = try await model.textGenerator(for: .correction, languageCode: language, scope: itemID.uuidString)
                 engineName = generator.displayName
                 suggestion = try await AITaskRunner.suggestCorrection(
                     target: segment.text, before: context.before, after: context.after, suspicious: suspicious,

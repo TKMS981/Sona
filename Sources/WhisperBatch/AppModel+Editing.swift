@@ -66,6 +66,9 @@ extension AppModel {
         guard speakerTasks[id] == nil, let item = queue.item(id), item.status == .completed, let storage = models.storage,
               let ai = SonaRuntime.ai, has(.speakerIdentification) else { return }
         speakerJobs[id] = SpeakerJob(phase: .reading, progress: 0)
+        // 進捗の表示の更新は段階ごとに間引く（処理そのものは変えない）
+        let gates: [SpeakerIdentificationPhase: ProgressGate] = [.converting: ProgressGate(), .reading: ProgressGate(),
+                                                                 .analyzing: ProgressGate()]
         speakerTasks[id] = Task {
             defer {
                 speakerJobs[id] = nil
@@ -76,6 +79,7 @@ extension AppModel {
                     item: item, storage: storage, speakerCount: speakerCount,
                     onRefresh: { self.transcription.applyRefreshedBookmark($0, to: id) },
                     progress: { phase, fraction in
+                        guard gates[phase]?.pass(fraction) ?? true else { return }
                         Task { @MainActor in
                             guard self.speakerJobs[id] != nil else { return }
                             self.speakerJobs[id] = SpeakerJob(phase: phase, progress: fraction)

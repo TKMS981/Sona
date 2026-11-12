@@ -165,7 +165,7 @@ struct AIRewriteSheet: View {
         job = Task {
             defer { busy = false; job = nil }
             do {
-                let generator = try await model.textGenerator(for: task, languageCode: language)
+                let generator = try await model.textGenerator(for: task, languageCode: language, scope: itemID.uuidString)
                 let result = try await AITaskRunner.rewrite(task, lines: lines, suspicious: suspicious, generator: generator,
                                                             languageCode: language) { value in
                     Task { @MainActor in progress = value }

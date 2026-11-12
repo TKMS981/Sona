@@ -92,11 +92,12 @@ private struct LiveHeader: View {
         let session = live.session
         HStack(alignment: .center, spacing: 14) {
             LiveStateBadge(state: session.state)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(TranscriptFormatter.clock(session.elapsed(at: context.date)))
+            // 経過時間が進むのは取り込み中だけ（一時停止中・終了後は描き直さない）
+            EverySecond(isActive: session.state.isCapturing) { date in
+                Text(TranscriptFormatter.clock(session.elapsed(at: date)))
                     .appFont(.title2, weight: .medium, monospacedDigit: true)
                     .foregroundStyle(session.state == .idle ? .secondary : .primary)
-                    .accessibilityLabel(L("live.elapsed.accessibility", TranscriptFormatter.clock(session.elapsed(at: context.date))))
+                    .accessibilityLabel(L("live.elapsed.accessibility", TranscriptFormatter.clock(session.elapsed(at: date))))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("live.header.model", live.model.displayName, model.language.displayName))
@@ -631,10 +632,11 @@ private struct LiveQualityStrip: View {
 
     var body: some View {
         let session = model.live.session
-        TimelineView(.periodic(from: .now, by: 1)) { context in
+        // 時刻で変わる表示（直近の取りこぼし）は取り込み中だけ。それ以外は値が変わったときだけ描き直す
+        EverySecond(isActive: session.state.isCapturing) { date in
             let snapshot = session.quality.snapshot
             let status = session.state == .finished || session.state == .paused
-                ? nil : session.qualityStatus(at: context.date)
+                ? nil : session.qualityStatus(at: date)
             HStack(spacing: 14) {
                 if let status {
                     Label(L("live.quality.\(status.rawValue)"), systemImage: icon(status))

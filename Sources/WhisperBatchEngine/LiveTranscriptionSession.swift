@@ -552,8 +552,10 @@ public final class LiveTranscriptionSession {
         }
         updateBacklog()
         noteDropped(drained.droppedFrames)
+        // 音量の表示は、値が変わったときだけ書き換える（無音が続く間に画面を描き直さない）
         for i in inputs.indices {
-            inputs[i].level = inputs[i].isActive ? (drained.levels[inputs[i].kind] ?? 0) : 0
+            let level = inputs[i].isActive ? (drained.levels[inputs[i].kind] ?? 0) : 0
+            if inputs[i].level != level { inputs[i].level = level }
         }
         for (kind, event) in drained.events {
             await handle(event, from: kind)
@@ -673,7 +675,7 @@ public final class LiveTranscriptionSession {
         lastRecognizedEnd = startFrame + snapshot.count
         updateBacklog()
         guard !snapshot.isEmpty, let recognizer else {
-            if isFinal { transcript.clearProvisional() }
+            if isFinal, !transcript.provisional.isEmpty { transcript.clearProvisional() }
             return
         }
         let duration = Double(snapshot.count) / sampleRate
@@ -681,7 +683,8 @@ public final class LiveTranscriptionSession {
         let analysis = await Self.analyze(snapshot, detector: detector, sampleRate: sampleRate)
         guard analysis.hasSpeech else {
             // 発話のない音声は認識しない（無音から文章を作る誤認識を避ける）
-            transcript.clearProvisional()
+            // （暫定の区間がないときは書き換えない。画面を描き直さないため）
+            if !transcript.provisional.isEmpty { transcript.clearProvisional() }
             let before = window.startFrame
             discard(upTo: startFrame, plus: policy.silentAdvance(windowDuration: duration, isFinal: isFinal))
             diagnostics.silenceSkippedSeconds += Double(window.startFrame - before) / sampleRate

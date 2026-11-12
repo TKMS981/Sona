@@ -595,6 +595,14 @@ struct LocalAITextTests {
         #expect(LocalAIText.reason(from: "その他") == nil)
     }
 
+    @Test func copiedCorrectionHintsAreRemoved() {
+        #expect(LocalAIText.removingCorrectionHint("在庫が不足しています。（確からしさが低い語: 不測、在庫）") == "在庫が不足しています。")
+        #expect(LocalAIText.removingCorrectionHint("We need to hear more. (low-confidence words: here)") == "We need to hear more.")
+        // 手がかりの形でない括弧書き・文の途中の括弧は変えない
+        #expect(LocalAIText.removingCorrectionHint("会議（午後）は本社です。") == "会議（午後）は本社です。")
+        #expect(LocalAIText.removingCorrectionHint("確認（確からしさが低い語: x）の後") == "確認（確からしさが低い語: x）の後")
+    }
+
     @Test func rewritesThatChangeTooMuchAreRejected() {
         let originals = [0: "えー今日は晴れです", 1: "明日は雨", 2: "変えない"]
         let parsed = [(index: 0, text: "今日は晴れです。"), (index: 1, text: "明日は雨が降るでしょうと気象庁が発表しました"),

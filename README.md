@@ -154,6 +154,7 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 
 - 確からしさの結合テスト（`Tests/WhisperBatchEngineTests/FeatureIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_AUDIO_DIR` と `WHISPER_BATCH_TEST_MODEL`（Whisper）、`WHISPER_BATCH_TEST_REAZON_DIR`（ReazonSpeech k2 v2）、`WHISPER_BATCH_TEST_APPLE_CONFIDENCE`（英語の音声。Apple）を指定したときだけ実行されます
 - Vantage の AI の結合テスト（`Tests/SonaVantageAITests`）は、`WHISPER_BATCH_TEST_LLM_DIR`（カタログのファイル名の GGUF を置いたフォルダ。置いたモデルだけを試す）、`WHISPER_BATCH_TEST_DIARIZATION_DIR` と `WHISPER_BATCH_TEST_DIALOGUE`（話者識別）、`WHISPER_BATCH_TEST_ONDEVICE_AI=1`（Apple Intelligence）を指定したときだけ実行されます。ローカルの言語モデルの取得の中止・再開・照合を実際の通信で試すテスト（`Tests/WhisperBatchEngineTests/LocalLLMDownloadTests.swift`）は `WHISPER_BATCH_TEST_LLM_DOWNLOAD_DIR`（TinySwallow、約 1.1GB を取得）を指定したときだけ実行されます
+- 負荷の計測（`Tests/WhisperBatchEngineTests/ResourceBenchmarks.swift`・`Tests/SonaVantageAITests/ResourceBenchmarks.swift`）は、`WHISPER_BATCH_TEST_BENCH_OUT`（結果を追記するファイル）を指定したときだけ実行されます。一括処理の計測には `WHISPER_BATCH_TEST_AUDIO_DIR`（`long.mp4`）、ローカルの言語モデルの計測には `WHISPER_BATCH_TEST_LLM_DIR` が必要です（計測するモデルは `WHISPER_BATCH_TEST_BENCH_LLM` で変えられます）。最適化の前後で同じテストを実行して比べるためのものです。誤認識の修正の計測（`Tests/SonaVantageAITests/CorrectionBenchmarks.swift`）は同じ環境変数で実行され、正解つきの合成の文字起こしで、入力・生成のトークン数と時間（prompt eval・decode）、後処理の時間、修正の正確さ（直せた・見逃し・誤った修正・不要な修正・守る語の変化）を記録します（`WHISPER_BATCH_TEST_BENCH_INSTRUCTIONS` で指示の案を差し替えて比べられます）
 
 ## 使い方
 

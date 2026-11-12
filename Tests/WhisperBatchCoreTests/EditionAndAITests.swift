@@ -260,6 +260,23 @@ struct AITaskRunnerTests {
         #expect(correction.requests.first?.instructions.contains("人名・地名・製品名・数字・日付・金額") == true)
     }
 
+    @Test func correctionsWithCopiedHintsAreStillChecked() async throws {
+        // 依頼の行に付けた手がかりを書き写した返答でも、直した文として検査する（数字を変えたものは使わない）
+        let generator = FakeGenerator { _ in
+            "#1: これは 0 番めの発言で、予算は300万円です。（確からしさが低い語: 番目）\n#2: これは 1 番目の発言で、予算は30万円です。（確からしさが低い語: 番目）"
+        }
+        let outcome = try await AITaskRunner.rewrite(.correction, lines: Array(lines.prefix(2)), suspicious: [0: ["番目"], 1: ["番目"]],
+                                                     generator: generator, languageCode: "ja")
+        #expect(outcome.candidates == [RewriteCandidate(index: 0, original: transcript.segments[0].text,
+                                                        rewritten: "これは 0 番めの発言で、予算は300万円です。")])
+        #expect(outcome.rejected.map(\.index) == [1])
+        #expect(outcome.rejected[0].violations.contains(.changedProtected("300")))
+        // 整形の返答は変えない（整形には手がかりを付けない）
+        let polish = FakeGenerator { _ in "#1: これは 0 番目の発言で、予算は300万円です（確からしさが低い語: 番目）" }
+        let polished = try await AITaskRunner.rewrite(.polish, lines: Array(lines.prefix(1)), generator: polish, languageCode: "ja")
+        #expect(polished.candidates.isEmpty && polished.rejected.map(\.index) == [0])
+    }
+
     @Test func suggestionMustPassTheChecks() async throws {
         let ok = FakeGenerator { _ in "会議の議事録を自動で作成します。" }
         #expect(try await AITaskRunner.suggestCorrection(target: "会議の議事録を自動で作製します。", before: [], after: [],

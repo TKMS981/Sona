@@ -5,36 +5,257 @@ import WhisperBatchCore
 
 /// ローカルの言語モデル（GGUF）を llama.cpp で読み込んで保持する。
 ///
-/// - 一度に読み込むモデルは 1 つだけ。別のモデルを使うときは、前のモデルを解放してから読み込む。
+/// - 一度に読み込むモデルは 1 つだけ。別のモデルを使うときは、前のモデルを使い終わるのを待ち、解放してから読み込む。
 /// - 物理メモリの 60% を超えそうなモデルは読み込まない（`LocalLLMCatalog.memoryBudget`）。
 /// - 推論は専用のシリアルキューで行う（llama_context は同時に 1 スレッドからしか使えない）。
 /// - モデルのファイルは読み込む前に呼び出し側が SHA-256 で照合する（`ModelStorage.verifyContents`）。
+/// - 渡した生成器を誰かが持っている間は「使用中」とし、解放しない（`release()` は使い終わるまで延ばす）。
+///   使い終わってから `idleTimeout` の間使われなければ解放する。メモリが逼迫したとき（macOS の通知）も、使用中でなければ解放する。
+///   推論の設定（文脈の長さ・サンプリングなど）は変えない。読み込み直すときも同じ設定で読み込む。
 public actor LlamaModelHost {
     private var loaded: LoadedLlamaModel?
+    /// 解放・読み込みの途中（この間に別の読み込みを始めない）
+    private var transitioning = false
+    /// 使用中の生成器の数（生成器が手放されると、その場で減る）
+    private let usage = LlamaUsage()
+    /// 使い終わったら解放する（使用中に解放を頼まれた）
+    private var releaseWhenIdle = false
+    private var idleTimer: Task<Void, Never>?
+    private var memoryPressure: (any DispatchSourceMemoryPressure)?
+    /// 状態が変わるのを待っている呼び出し（別のモデルへの切り替えなど）
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var observer: (@Sendable (String?) -> Void)?
 
-    public init() {}
+    /// 使い終わってから自動で解放するまでの時間（nil なら自動では解放しない）
+    public let idleTimeout: Duration?
+
+    public init(idleTimeout: Duration? = .seconds(180)) {
+        self.idleTimeout = idleTimeout
+    }
 
     /// 読み込んでいるモデルの id
     public var loadedModelID: String? { loaded?.spec.id }
 
-    /// モデルを用意する（同じモデルが読み込み済みならそれを使う）
-    public func generator(for model: LocalLLM, fileURL: URL) async throws -> any TextGenerator {
-        if let loaded, loaded.spec.id == model.id { return LlamaGenerator(model: loaded) }
-        // 前のモデルを先に解放する（2 つを同時にメモリに置かない）
-        await release()
-        guard LocalLLMCatalog.fitsInMemory(model) else {
-            throw WhisperBatchError.onDeviceAIUnavailable(reason: L("ai.guidance.tooLarge", model.displayName))
-        }
-        let new = try await LoadedLlamaModel.load(spec: model, fileURL: fileURL)
-        loaded = new
-        return LlamaGenerator(model: new)
+    /// 使用中の生成器の数
+    public var activeUseCount: Int { usage.count }
+
+    /// 読み込んでいるモデルが変わったら呼ぶ（表示の更新用。nil は解放した）
+    public func setObserver(_ observer: (@Sendable (String?) -> Void)?) {
+        self.observer = observer
     }
 
-    /// 読み込んでいるモデルを解放する（推論中なら終わるのを待つ）
+    /// モデルを用意する（同じモデルが読み込み済みならそれを使う）。返した生成器を持っている間は使用中になる。
+    public func generator(for model: LocalLLM, fileURL: URL) async throws -> any TextGenerator {
+        while true {
+            try Task.checkCancellation()
+            if transitioning {
+                try await waitForChange()
+                continue
+            }
+            if let loaded {
+                if loaded.spec.id == model.id { return lease(loaded) }
+                // 別のモデルが使用中なら、使い終わるまで待つ（処理中のモデルは解放しない。2 つを同時にメモリに置かない）
+                if usage.count > 0 {
+                    try await waitForChange()
+                    continue
+                }
+                await unload()
+                continue
+            }
+            guard LocalLLMCatalog.fitsInMemory(model) else {
+                throw WhisperBatchError.onDeviceAIUnavailable(reason: L("ai.guidance.tooLarge", model.displayName))
+            }
+            transitioning = true
+            do {
+                let new = try await LoadedLlamaModel.load(spec: model, fileURL: fileURL)
+                loaded = new
+                releaseWhenIdle = false
+                transitioning = false
+                startWatchingMemoryPressure()
+                observer?(new.spec.id)
+                resumeWaiters()
+                return lease(new)
+            } catch {
+                transitioning = false
+                resumeWaiters()
+                throw error
+            }
+        }
+    }
+
+    /// 読み込んでいるモデルを解放する。使用中なら、使い終わったときに解放する（処理中のモデルは解放しない）。
     public func release() async {
+        guard loaded != nil else { return }
+        if usage.count > 0 || transitioning {
+            releaseWhenIdle = true
+            return
+        }
+        await unload()
+    }
+
+    /// 使用中でなければ解放する（解放したら true）
+    @discardableResult
+    public func releaseIfIdle() async -> Bool {
+        guard loaded != nil, usage.count == 0, !transitioning else { return false }
+        await unload()
+        return true
+    }
+
+    /// アプリの終了時: 実行中の推論を打ち切って解放する
+    public func shutdown() async {
+        idleTimer?.cancel()
+        idleTimer = nil
+        guard let model = loaded else { return }
+        model.abortAll()
+        loaded = nil
+        transitioning = true
+        await model.close()
+        transitioning = false
+        stopWatchingMemoryPressure()
+        observer?(nil)
+        resumeWaiters()
+    }
+
+    // MARK: 使用中の管理
+
+    private func lease(_ model: LoadedLlamaModel) -> any TextGenerator {
+        idleTimer?.cancel()
+        idleTimer = nil
+        usage.begin()
+        return LlamaGenerator(model: model, lease: LlamaLease(usage: usage, host: self))
+    }
+
+    /// 生成器が手放された（`LlamaLease` から呼ぶ）
+    func useEnded() async {
+        guard usage.count == 0 else { return }
+        resumeWaiters()
+        guard loaded != nil, !transitioning else { return }
+        if releaseWhenIdle {
+            await unload()
+        } else {
+            scheduleIdleRelease()
+        }
+    }
+
+    private func scheduleIdleRelease() {
+        idleTimer?.cancel()
+        guard let idleTimeout else { return }
+        idleTimer = Task { [weak self] in
+            try? await Task.sleep(for: idleTimeout)
+            guard !Task.isCancelled else { return }
+            await self?.idleTimerFired()
+        }
+    }
+
+    private func idleTimerFired() async {
+        idleTimer = nil
+        await releaseIfIdle()
+    }
+
+    private func unload() async {
+        idleTimer?.cancel()
+        idleTimer = nil
         guard let model = loaded else { return }
         loaded = nil
+        releaseWhenIdle = false
+        transitioning = true
         await model.close()
+        transitioning = false
+        stopWatchingMemoryPressure()
+        observer?(nil)
+        resumeWaiters()
+    }
+
+    // MARK: メモリの逼迫
+
+    private func startWatchingMemoryPressure() {
+        guard memoryPressure == nil else { return }
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global(qos: .utility))
+        source.setEventHandler { [weak self] in
+            Task { await self?.releaseIfIdle() }
+        }
+        source.resume()
+        memoryPressure = source
+    }
+
+    private func stopWatchingMemoryPressure() {
+        memoryPressure?.cancel()
+        memoryPressure = nil
+    }
+
+    // MARK: 待ち合わせ
+
+    private func waitForChange() async throws {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if Task.isCancelled {
+                    continuation.resume()
+                } else {
+                    waiters[id] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+        try Task.checkCancellation()
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        waiters.removeValue(forKey: id)?.resume()
+    }
+
+    private func resumeWaiters() {
+        let pending = waiters
+        waiters.removeAll()
+        for continuation in pending.values { continuation.resume() }
+    }
+}
+
+/// 使用中の生成器の数（生成器が手放されたときに、待たずに減らせるようにアクターの外に置く）
+final class LlamaUsage: Sendable {
+    private let state = Mutex(0)
+    var count: Int { state.withLock { $0 } }
+    func begin() { state.withLock { $0 += 1 } }
+    func end() { state.withLock { $0 = max($0 - 1, 0) } }
+}
+
+/// 生成器 1 つ分の使用（生成器のコピーがすべて手放されると終わる）
+final class LlamaLease: Sendable {
+    private let usage: LlamaUsage
+    private let host: LlamaModelHost
+
+    init(usage: LlamaUsage, host: LlamaModelHost) {
+        self.usage = usage
+        self.host = host
+    }
+
+    deinit {
+        usage.end()
+        let host = host
+        Task { await host.useEnded() }
+    }
+}
+
+/// 推論の設定（読み込みと生成で実際に使う値）。結果の再利用（`AIResultCache`）の条件にも、この値をそのまま含める。
+public enum LlamaInferenceSettings {
+    /// llama.cpp の版（Package.swift の XCFramework）
+    public static let runtimeVersion = "llama.cpp b11976"
+    /// GPU に置く層の数（-1 はすべて）
+    static let gpuLayers: Int32 = -1
+    /// 入力をまとめて処理する数（n_batch・n_ubatch）
+    static let batch: UInt32 = 512
+    static let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
+    // greedy でないときのサンプリング（要約）
+    static let topK: Int32 = 40
+    static let topP: Float = 0.9
+    static let temperature: Float = 0.3
+    static let seed: UInt32 = 1234
+
+    /// 結果の再利用の条件に含める文字列（値が 1 つでも変われば別の条件になる）
+    public static var signature: String {
+        "\(runtimeVersion);gpu_layers=\(gpuLayers);n_batch=\(batch);n_ubatch=\(batch);n_seq_max=1;threads=\(threads)"
+            + ";top_k=\(topK);top_p=\(topP);temp=\(temperature);seed=\(seed)"
     }
 }
 
@@ -44,7 +265,12 @@ final class LoadedLlamaModel: @unchecked Sendable {
     private let queue: DispatchQueue
     private var model: OpaquePointer?
     private var context: OpaquePointer?
-    private let batchSize: Int32 = 512
+    private let batchSize = Int32(LlamaInferenceSettings.batch)
+    /// アプリの終了時に、実行中の推論を打ち切る
+    private let aborted = LlamaCancellation()
+    /// 最後に終わった生成の内訳（計測用。推論には影響しない）
+    private let stats = Mutex<LlamaRunStats?>(nil)
+    var lastRunStats: LlamaRunStats? { stats.withLock { $0 } }
 
     private init(spec: LocalLLM, model: OpaquePointer, context: OpaquePointer, queue: DispatchQueue) {
         self.spec = spec
@@ -57,19 +283,20 @@ final class LoadedLlamaModel: @unchecked Sendable {
         LlamaLogging.configure()
         let queue = DispatchQueue(label: "Sona.llama", qos: .userInitiated)
         let path = fileURL.path
-        let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
+        let settings = LlamaInferenceSettings.self
+        let threads = settings.threads
         let handle: (OpaquePointer?, OpaquePointer?) = await withCheckedContinuation { continuation in
             queue.async {
                 var mparams = llama_model_default_params()
-                mparams.n_gpu_layers = -1 // すべての層を Metal（GPU）で扱う
+                mparams.n_gpu_layers = settings.gpuLayers // すべての層を Metal（GPU）で扱う
                 guard let model = llama_model_load_from_file(path, mparams) else {
                     continuation.resume(returning: (nil, nil))
                     return
                 }
                 var cparams = llama_context_default_params()
                 cparams.n_ctx = UInt32(spec.contextTokens)
-                cparams.n_batch = 512
-                cparams.n_ubatch = 512
+                cparams.n_batch = settings.batch
+                cparams.n_ubatch = settings.batch
                 cparams.n_seq_max = 1
                 cparams.n_threads = threads
                 cparams.n_threads_batch = threads
@@ -86,6 +313,9 @@ final class LoadedLlamaModel: @unchecked Sendable {
         }
         return LoadedLlamaModel(spec: spec, model: model, context: context, queue: queue)
     }
+
+    /// 実行中・これからの推論を打ち切る（アプリの終了時）
+    func abortAll() { aborted.cancel() }
 
     /// 解放する（キューに積んで、実行中の推論が終わってから解放する）
     func close() async {
@@ -107,7 +337,7 @@ final class LoadedLlamaModel: @unchecked Sendable {
 
     /// 入力の文字列（特別なトークンを含む）から続きを生成する
     func complete(prompt: String, greedy: Bool, maxTokens: Int) async throws -> String {
-        let flag = LlamaCancellation()
+        let flag = LlamaCancellation(parent: aborted)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, any Error>) in
                 queue.async { [self] in
@@ -140,6 +370,9 @@ final class LoadedLlamaModel: @unchecked Sendable {
         defer { llama_set_abort_callback(context, nil, nil) }
 
         // 入力をまとめて処理する
+        let clock = ContinuousClock()
+        let promptStart = clock.now
+        let promptTokens = tokens.count
         var start = 0
         while start < tokens.count {
             if flag.isCancelled { throw CancellationError() }
@@ -152,24 +385,37 @@ final class LoadedLlamaModel: @unchecked Sendable {
             start += n
         }
         tokens.removeAll()
+        // 入力の処理が終わるのを待ってから時間を測る（Metal では llama_decode が計算の終わりを待たずに戻るため）
+        llama_synchronize(context)
+        let promptDuration = clock.now - promptStart
 
         let sampler = llama_sampler_chain_init(llama_sampler_chain_default_params())
         defer { llama_sampler_free(sampler) }
         if greedy {
             llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
         } else {
-            llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40))
-            llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9, 1))
-            llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.3))
-            llama_sampler_chain_add(sampler, llama_sampler_init_dist(1234))
+            let settings = LlamaInferenceSettings.self
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_k(settings.topK))
+            llama_sampler_chain_add(sampler, llama_sampler_init_top_p(settings.topP, 1))
+            llama_sampler_chain_add(sampler, llama_sampler_init_temp(settings.temperature))
+            llama_sampler_chain_add(sampler, llama_sampler_init_dist(settings.seed))
         }
 
         let stops = spec.format.stopStrings.map { Array($0.utf8) }
         let isHarmony = spec.format == .harmonyLLMJP || spec.format == .harmonyGPTOSS
         var output: [UInt8] = []
+        let decodeStart = clock.now
+        var generated = 0
+        defer {
+            stats.withLock {
+                $0 = LlamaRunStats(promptTokens: promptTokens, promptDuration: promptDuration,
+                                   generatedTokens: generated, decodeDuration: clock.now - decodeStart, budget: budget)
+            }
+        }
         for _ in 0 ..< budget {
             if flag.isCancelled { throw CancellationError() }
             var token = llama_sampler_sample(sampler, context, -1)
+            generated += 1
             let piece = self.piece(vocab: vocab, token: token)
             if llama_vocab_is_eog(vocab, token) {
                 // Harmony 形式では、思考（analysis）の終わりの <|end|> を終わりとして扱う版がある。最終の回答がまだなら続ける
@@ -217,9 +463,25 @@ final class LoadedLlamaModel: @unchecked Sendable {
     }
 }
 
+/// 1 回の生成の内訳（計測用）
+struct LlamaRunStats: Sendable {
+    /// 入力のトークン数
+    var promptTokens: Int
+    /// 入力の処理（prompt eval）にかかった時間
+    var promptDuration: Duration
+    /// 生成したトークン数（終わりのトークンを含む）
+    var generatedTokens: Int
+    /// 生成（decode）にかかった時間
+    var decodeDuration: Duration
+    /// 生成できるトークン数の上限
+    var budget: Int
+}
+
 /// llama.cpp で読み込んだモデルを使う生成器
 struct LlamaGenerator: TextGenerator {
     let model: LoadedLlamaModel
+    /// 持っている間は使用中（モデルを解放しない）
+    let lease: LlamaLease
 
     var displayName: String { AITextEngine.local(model.spec).displayName }
     var isTranslationOnly: Bool { model.spec.isTranslationOnly }
@@ -251,8 +513,11 @@ struct LlamaGenerator: TextGenerator {
 
 final class LlamaCancellation: Sendable {
     private let state = Atomic<Bool>(false)
+    /// こちらが中止されたら、これも中止とみなす（アプリの終了時の打ち切り）
+    private let parent: LlamaCancellation?
+    init(parent: LlamaCancellation? = nil) { self.parent = parent }
     func cancel() { state.store(true, ordering: .relaxed) }
-    var isCancelled: Bool { state.load(ordering: .relaxed) }
+    var isCancelled: Bool { state.load(ordering: .relaxed) || parent?.isCancelled == true }
 }
 
 /// llama.cpp / ggml のログはアプリの出力に混ぜない（WHISPER_BATCH_VERBOSE=1 のときだけ標準エラーへ）

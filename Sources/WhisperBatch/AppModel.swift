@@ -182,7 +182,8 @@ final class AppModel {
             guard settings.notifyLiveInterrupted else { return }
             NotificationService.shared.post(title: L("notify.live.title"), body: message, settings: settings)
         }
-        models.onDownloadFinished = { [settings] model, failure in
+        models.onDownloadFinished = { [weak self, settings] model, failure in
+            if failure == nil { self?.modelDownloadFinished(model) }
             guard settings.notifyDownloads else { return }
             if let failure {
                 NotificationService.shared.post(title: L("notify.download.failed", model.displayName), body: failure, settings: settings)
@@ -191,6 +192,7 @@ final class AppModel {
                                                 body: L("notify.download.doneBody"), settings: settings)
             }
         }
+        connectAIRuntime()
     }
 
     /// 表示言語を切り替える（保存は SettingsStore が行う）
@@ -351,7 +353,7 @@ final class AppModel {
         transcription.cancel()
         speakerTasks.values.forEach { $0.cancel() }
         for task in speakerTasks.values { await task.value }
-        await SonaRuntime.ai?.releaseTextModel()
+        await SonaRuntime.ai?.shutdownTextModel()
         await live.shutdown()
         mp3ExportTasks.values.forEach { $0.cancel() }
         await transcription.waitUntilFinished()
@@ -384,8 +386,11 @@ final class AppModel {
                         onRefresh: { transcription.applyRefreshedBookmark($0, to: id) }
                     ) { url in
                         // 一時フォルダと保存先の両方に空きがあるかを、変換を始める前に確かめる
+                        // （進捗の表示の更新は間引く。変換の処理そのものは変えない）
+                        let gate = ProgressGate()
                         try await MP3Converter.convert(source: url, destination: tempURL,
                                                        finalFolders: [destination.deletingLastPathComponent()]) { p in
+                            guard gate.pass(p) else { return }
                             Task { @MainActor in
                                 if let current = self.mp3Exports[id], p > current { self.mp3Exports[id] = p }
                             }

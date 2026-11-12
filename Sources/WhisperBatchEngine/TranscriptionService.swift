@@ -27,6 +27,8 @@ public final class TranscriptionService {
     @ObservationIgnored private var probeTask: Task<Void, Never>?
     /// 追加直後の確認で読み込めないと分かった項目（次の一括処理の結果に失敗として含める）
     @ObservationIgnored private var probeFailedIDs: Set<UUID> = []
+    /// 文字起こしの内容（編集・話者・結果そのもの）が変わった・項目を削除したときに呼ぶ（AI の結果を再利用しないため）
+    @ObservationIgnored public var onTranscriptInputChanged: ((Set<UUID>) -> Void)?
 
     public init(loadTranscriber: @escaping TranscriberLoading,
                 inspectMedia: @escaping MediaInspecting = { try await MediaInspector.inspect($0) }) {
@@ -53,16 +55,29 @@ public final class TranscriptionService {
 
     /// 指定した項目を削除する（処理中の項目は残す）。削除した件数を返す。
     @discardableResult
-    public func remove(_ ids: Set<UUID>) -> Int { queue.remove(ids) }
+    public func remove(_ ids: Set<UUID>) -> Int { removing { $0.remove(ids) } }
 
     @discardableResult
-    public func removeAllPending() -> Int { queue.removeAllPending() }
+    public func removeAllPending() -> Int { removing { $0.removeAllPending() } }
 
     @discardableResult
-    public func removeAllRemovable() -> Int { queue.removeAllRemovable() }
+    public func removeAllRemovable() -> Int { removing { $0.removeAllRemovable() } }
 
     @discardableResult
-    public func removeAllCompleted() -> Int { queue.removeAllCompleted() }
+    public func removeAllCompleted() -> Int { removing { $0.removeAllCompleted() } }
+
+    /// 削除して、消えた項目を知らせる
+    private func removing(_ body: (inout TranscriptionQueue) -> Int) -> Int {
+        let before = Set(queue.items.map(\.id))
+        let count = body(&queue)
+        if count > 0 { notifyInputChanged(before.subtracting(queue.items.map(\.id))) }
+        return count
+    }
+
+    private func notifyInputChanged(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        onTranscriptInputChanged?(ids)
+    }
 
     /// 項目の順序を変える（待機中の項目は上から順に処理する）
     public func move(fromOffsets source: IndexSet, toOffset destination: Int) {
@@ -71,17 +86,25 @@ public final class TranscriptionService {
 
     /// 完了した項目の編集・話者名・要約などを変える
     public func updateAnnotations(_ id: UUID, _ body: (inout TranscriptAnnotations) -> Void) {
+        let before = queue.item(id)?.annotations
         queue.updateAnnotations(id, body)
+        // AI に渡す文が変わる変更（編集・話者名）だけを知らせる（要約などの結果を入れただけなら知らせない）
+        if let before, let after = queue.item(id)?.annotations,
+           before.edits != after.edits || before.speakerNames != after.speakerNames {
+            notifyInputChanged([id])
+        }
     }
 
     /// 話者識別の結果を入れる
     public func setSpeakers(_ id: UUID, _ speakers: [Int?]) {
         queue.setSpeakers(id, speakers)
+        notifyInputChanged([id])
     }
 
     /// 1 つの区間の話者を変える
     public func setSpeaker(_ id: UUID, segment: Int, speaker: Int?) {
         queue.setSpeaker(id, segment: segment, speaker: speaker)
+        notifyInputChanged([id])
     }
 
     /// 古くなったブックマークを作り直したときに、キューの項目へ反映する
@@ -93,7 +116,9 @@ public final class TranscriptionService {
     @discardableResult
     public func retry(_ ids: Set<UUID>) -> Int {
         probeFailedIDs.subtract(ids)
-        return queue.resetForRetry(ids)
+        let count = queue.resetForRetry(ids)
+        if count > 0 { notifyInputChanged(ids) }
+        return count
     }
 
     // MARK: 一括処理
@@ -145,6 +170,7 @@ public final class TranscriptionService {
             do {
                 let transcript = try await process(item, context: context, options: options)
                 try queue.markCompleted(id, transcript: transcript)
+                notifyInputChanged([id])
                 succeeded += 1
             } catch is CancellationError {
                 try? queue.markCancelled(id)
@@ -184,7 +210,10 @@ public final class TranscriptionService {
             try queue.setPhase(id, .converting)
             let mp3 = try ConversionWorkspace.makeTemporaryMP3URL()
             defer { ConversionWorkspace.remove(mp3) }
+            // 進捗の表示の更新は間引く（変換の処理そのものは変えない）
+            let gate = ProgressGate()
             try await MP3Converter.convert(source: url, destination: mp3) { p in
+                guard gate.pass(p) else { return }
                 Task { @MainActor in self.queue.updateProgress(id, phase: .converting, p) }
             }
             try queue.setPhase(id, .transcribing)
@@ -193,7 +222,10 @@ public final class TranscriptionService {
     }
 
     private func transcribe(_ url: URL, id: UUID, context: any Transcriber, options: TranscriptionOptions) async throws -> Transcript {
-        try await context.transcribe(fileURL: url, options: options) { p in
+        // 進捗の表示の更新は間引く（認識の処理そのものは変えない）
+        let gate = ProgressGate()
+        return try await context.transcribe(fileURL: url, options: options) { p in
+            guard gate.pass(p) else { return }
             Task { @MainActor in self.queue.updateProgress(id, phase: .transcribing, p) }
         }
     }

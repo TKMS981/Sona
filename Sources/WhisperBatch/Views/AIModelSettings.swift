@@ -6,7 +6,8 @@ import WhisperBatchEngine
 ///
 /// - モデルの取得は、利用者がこの画面で選んで確認したときだけ行う（自動では取得しない。更新も同じ）。
 /// - 取得したファイルは SHA-256 で照合してから使えるようにする。読み込む前にも照合する。
-/// - 推論のときに読み込むモデルは 1 つだけ。別のモデルを使うと前のモデルを解放する。
+/// - 推論のときに読み込むモデルは 1 つだけ。別のモデルを使うと前のモデルを（使い終わるのを待って）解放する。
+///   使い終わってから 3 分使われなければ自動で解放する（表示も変わる）。
 struct AIModelSettingsTab: View {
     @Environment(AppModel.self) private var model
     @ViewState private var category: LLMCategory?
@@ -49,10 +50,9 @@ struct AIModelSettingsTab: View {
                         Divider()
                         ResolutionPreview()
                         Divider()
-                        Picker(L("rewrite.mode"), selection: $settings.aiRewriteMode) {
-                            ForEach(AIRewriteMode.allCases) { Text($0.displayName).tag($0) }
-                        }
-                        .pickerStyle(.radioGroup)
+                        // 選択肢の文が長いので、ウインドウの幅に合わせて折り返せるラジオボタンにする
+                        WrappingRadioGroup(title: L("rewrite.mode"), options: AIRewriteMode.allCases,
+                                           label: \.displayName, selection: $settings.aiRewriteMode)
                         Text(L("ai.settings.rewriteMode.note"))
                             .appFont(.caption)
                             .foregroundStyle(.secondary)
@@ -98,8 +98,10 @@ struct AIModelSettingsTab: View {
                 }
             }
             .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 720, height: 640)
+        // 幅を固定しない（文字の大きさやウインドウの幅に合わせて折り返す。内容がウインドウより広くならないようにする）
+        .frame(minWidth: 560, idealWidth: 720, maxWidth: .infinity, minHeight: 560, idealHeight: 640, maxHeight: .infinity)
         .onAppear { model.models.refresh() }
         .alert(L("ai.download.title"), isPresented: Binding(get: { downloadTarget != nil }, set: { if !$0 { downloadTarget = nil } }),
                presenting: downloadTarget) { target in
@@ -229,28 +231,37 @@ private struct LLMRow: View {
         let fits = LocalLLMCatalog.fitsInMemory(llm)
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(llm.displayName).appFont(.body, weight: .medium)
-                    ForEach(LLMCategory.allCases.filter { llm.categories.contains($0) }) { c in
-                        Text(c.displayName)
-                            .appFont(.caption2, weight: .semibold)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color.accentColor.opacity(0.12), in: Capsule())
+                // 名前と分類は、1 行に収まらなければ 2 行にする
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        name
+                        tags
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        name
+                        tags
                     }
                 }
                 Text(L("ai.row.details", llm.publisher, llm.parameters, llm.quantization, sizeText(llm.file.sizeBytes),
                        sizeText(llm.estimatedMemoryBytes)))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(L("ai.row.tasks", AITask.allCases.filter { llm.tasks.contains($0) }.map(\.displayName)
                         .joined(separator: L("list.separator"))))
                     .appFont(.caption)
                     .foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    Button(L("ai.row.license", llm.license.name)) { openURL(llm.license.url) }
-                        .buttonStyle(.link)
-                    Button(L("ai.row.source", llm.repository, String(llm.revision.prefix(7)))) { openURL(llm.sourceURL) }
-                        .buttonStyle(.link)
+                    .fixedSize(horizontal: false, vertical: true)
+                // ライセンスと取得元のリンクは、1 行に収まらなければ 2 行にする
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        licenseLink
+                        sourceLink
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        licenseLink
+                        sourceLink
+                    }
                 }
                 .appFont(.caption)
                 Text(llm.runtime.displayName + " · " + llm.verification.displayName)
@@ -269,6 +280,37 @@ private struct LLMRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
+    }
+
+    private var name: some View {
+        Text(llm.displayName).appFont(.body, weight: .medium).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var tags: some View {
+        HStack(spacing: 6) {
+            ForEach(LLMCategory.allCases.filter { llm.categories.contains($0) }) { c in
+                Text(c.displayName)
+                    .appFont(.caption2, weight: .semibold)
+                    .lineLimit(1)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(0.12), in: Capsule())
+            }
+        }
+    }
+
+    private var licenseLink: some View {
+        Button(L("ai.row.license", llm.license.name)) { openURL(llm.license.url) }
+            .buttonStyle(.link)
+            .lineLimit(1)
+            .truncationMode(.middle)
+    }
+
+    private var sourceLink: some View {
+        Button(L("ai.row.source", llm.repository, String(llm.revision.prefix(7)))) { openURL(llm.sourceURL) }
+            .buttonStyle(.link)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("huggingface.co/\(llm.repository) @\(llm.revision)")
     }
 
     @ViewBuilder
@@ -333,5 +375,38 @@ private struct LLMRow: View {
             }
         }
         .controlSize(.small)
+    }
+}
+
+/// 選択肢の文を折り返せるラジオボタン（macOS の標準のラジオボタンは 1 行で表示し、長い文だとウインドウからはみ出す）
+private struct WrappingRadioGroup<Option: Hashable & Identifiable>: View {
+    let title: String
+    let options: [Option]
+    let label: KeyPath<Option, String>
+    @Binding var selection: Option
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+            ForEach(options) { option in
+                let selected = option == selection
+                Button {
+                    selection = option
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        Text(option[keyPath: label])
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
     }
 }

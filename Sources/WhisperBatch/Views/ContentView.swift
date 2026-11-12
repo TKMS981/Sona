@@ -130,9 +130,9 @@ private struct LiveToolbarButton: View {
             live.openFromMainWindow()
         } label: {
             if live.isActive {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                EverySecond(isActive: live.session.state.isCapturing) { date in
                     Label(L("toolbar.live.active", liveStateWord(live.state),
-                            TranscriptFormatter.clock(live.session.elapsed(at: context.date))),
+                            TranscriptFormatter.clock(live.session.elapsed(at: date))),
                           systemImage: live.state == .paused ? "pause.circle.fill" : "record.circle")
                 }
                 .foregroundStyle(live.state == .paused ? .orange : .red)
@@ -172,8 +172,8 @@ private struct LiveSessionBanner: View {
         HStack(spacing: 12) {
             LiveStateBadge(state: session.state)
             VStack(alignment: .leading, spacing: 2) {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(L("main.live.title", TranscriptFormatter.clock(session.elapsed(at: context.date))))
+                EverySecond(isActive: session.state.isCapturing) { date in
+                    Text(L("main.live.title", TranscriptFormatter.clock(session.elapsed(at: date))))
                         .appFont(.callout, weight: .medium, monospacedDigit: true)
                 }
                 Text(detail(live))
