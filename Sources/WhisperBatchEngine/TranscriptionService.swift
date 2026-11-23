@@ -36,10 +36,10 @@ public final class TranscriptionService {
         self.inspectMedia = inspectMedia
     }
 
-    /// アプリで使う構成（モデルは `storage` から読み込む）
-    public convenience init(storage: ModelStorage?) {
+    /// アプリで使う構成（モデルは `storage` から読み込む。`ai` は Vantage の AI の実装で、Air では nil）
+    public convenience init(storage: ModelStorage?, ai: (any AIRuntime)? = nil) {
         self.init(loadTranscriber: { model, language in
-            try await TranscriberLoader.load(model, storage: storage, language: language)
+            try await TranscriberLoader.load(model, storage: storage, language: language, ai: ai)
         })
     }
 

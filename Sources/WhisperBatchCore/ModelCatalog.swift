@@ -8,6 +8,10 @@ public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
     case reazonSpeech
     /// macOS 標準の音声認識（Speech フレームワークの SpeechAnalyzer）
     case apple
+    /// llama.cpp で動かす Qwen3-ASR（Alibaba。音声を直接読む言語モデル。Vantage だけ）
+    case qwen3ASR
+    /// llama.cpp で動かす Granite Speech（IBM。音声を直接読む言語モデル。Vantage だけ）
+    case graniteSpeech
 
     public var id: String { rawValue }
 
@@ -21,12 +25,29 @@ public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
     /// ファイルをダウンロードしてアプリ内に保存するか（Apple は OS が言語データを管理する）
     public var usesDownloadedFiles: Bool { self != .apple }
 
+    /// AI の実装（llama.cpp。Vantage だけにある `AIRuntime`）が必要か。Air ではこの方式を表示しない。
+    public var requiresAIRuntime: Bool {
+        switch self {
+        case .qwen3ASR, .graniteSpeech: true
+        case .whisper, .reazonSpeech, .apple: false
+        }
+    }
+
+    /// 選べる方式（AI の実装がなければ、それが必要な方式を除く）
+    public static func available(hasAIRuntime: Bool) -> [SpeechEngine] {
+        allCases.filter { hasAIRuntime || !$0.requiresAIRuntime }
+    }
+
     /// 文字起こしの言語に対応しているか。Apple の実際の対応言語は OS に問い合わせて確かめる。
     public func supports(_ language: LanguageOption) -> Bool {
         switch self {
         case .whisper: true
         case .reazonSpeech: language == .japanese
         case .apple: language != .auto
+        // Qwen3-ASR は 30 言語（一覧の言語はすべて）と自動判定
+        case .qwen3ASR: true
+        // Granite Speech 5.0 は英・仏・独・西・葡・日の 6 言語（言語を指定しなければ、この中から判定して書き起こす）
+        case .graniteSpeech: [.auto, .japanese, .english, .french, .german, .spanish].contains(language)
         }
     }
 
@@ -40,6 +61,8 @@ public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
         case .whisper: "large-v3-turbo-q5_0"
         case .reazonSpeech: "reazonspeech-k2-v2-int8"
         case .apple: "apple-speech"
+        case .qwen3ASR: "qwen3-asr-1.7b"
+        case .graniteSpeech: "granite-speech-5.0-2b"
         }
     }
 }
@@ -124,7 +147,7 @@ public struct SpeechModel: Identifiable, Hashable, Sendable {
 }
 
 public enum ModelCatalog {
-    public static let all: [SpeechModel] = whisper + reazonSpeech + apple
+    public static let all: [SpeechModel] = whisper + reazonSpeech + apple + speechLLM
 
     /// whisper.cpp 用（ggml 形式）。多言語モデルのみ（日本語を扱うため .en モデルは含めない）。
     /// https://huggingface.co/ggerganov/whisper.cpp から、コミットを固定して取得する。
@@ -187,6 +210,27 @@ public enum ModelCatalog {
     /// 文字起こし以外の、ダウンロードして使うモデル
     public static let auxiliary: [SpeechModel] = [speakerDiarization]
 
+    /// 音声を直接読む言語モデル（llama.cpp のマルチモーダルで動かす。Vantage だけ）。
+    /// どちらもモデル本体の GGUF と音声エンコーダー（mmproj）の GGUF の 2 つで、1 つめが本体・2 つめがエンコーダー。
+    /// 量子化はモデルの公開元が推奨・既定とするもの（Granite は本体 Q8_0 とエンコーダー f16。Qwen3-ASR はどちらも Q8_0）。
+    /// コミットを固定して取得する。サイズと SHA-256 はそのコミットの LFS メタデータの値（2026-11 確認）。
+    static let speechLLM: [SpeechModel] = [
+        // Qwen3-ASR 1.7B（Apache-2.0）。llama.cpp の公式の変換（ggml-org）
+        SpeechModel(id: "qwen3-asr-1.7b", engine: .qwen3ASR, files: [
+            hfFile("ggml-org/Qwen3-ASR-1.7B-GGUF", qwen3ASRRevision, "Qwen3-ASR-1.7B-Q8_0.gguf", 2_165_035_232,
+                   "cd5f5ce9d7c9c03ff47d54d7f2726e63a39e61e3001640c5d08b6e4d3aed1e6d"),
+            hfFile("ggml-org/Qwen3-ASR-1.7B-GGUF", qwen3ASRRevision, "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", 355_709_376,
+                   "24eaf9a96fa94fe36ed0c1de68d44cccdb3f2229ee614e5b1b5bab951bc37883"),
+        ], folder: "qwen3-asr-1.7b"),
+        // Granite Speech 5.0 2B（Apache-2.0）。IBM の公式の GGUF
+        SpeechModel(id: "granite-speech-5.0-2b", engine: .graniteSpeech, files: [
+            hfFile("ibm-granite/granite-speech-5.0-2b-GGUF", graniteSpeechRevision, "granite-speech-5.0-2b-Q8_0.gguf", 1_956_155_104,
+                   "4972786fa455b71ee1f020e8ae1b147ca6cd2b1e5b0818048011d7f1da242790"),
+            hfFile("ibm-granite/granite-speech-5.0-2b-GGUF", graniteSpeechRevision, "mmproj-model-f16.gguf", 1_159_354_752,
+                   "c0d108e1a3cf345b22c411245fc2762319f1c6b6e56bb15bdffe748c9342ca7d"),
+        ], folder: "granite-speech-5.0-2b"),
+    ]
+
     /// macOS 標準の音声認識。言語データは OS がダウンロード・管理する。
     static let apple: [SpeechModel] = [
         SpeechModel(id: "apple-speech", engine: .apple, files: []),
@@ -219,6 +263,16 @@ public enum ModelCatalog {
         let url = URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/\(whisperRevision)/\(fileName)")!
         return SpeechModel(id: id, engine: .whisper,
                            files: [ModelFile(name: fileName, url: url, sizeBytes: size, sha256: sha256)])
+    }
+
+    /// ggml-org/Qwen3-ASR-1.7B-GGUF（2026-11-21 更新）
+    private static let qwen3ASRRevision = "3b2c29585c2180452ccb14d3b6b58127f352400d"
+    /// ibm-granite/granite-speech-5.0-2b-GGUF（2026-11-19 更新）
+    private static let graniteSpeechRevision = "3205b0b3adbd6c4982fb502f40503d668b63b145"
+
+    private static func hfFile(_ repo: String, _ revision: String, _ name: String, _ size: Int64, _ sha256: String) -> ModelFile {
+        ModelFile(name: name, url: URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(name)")!,
+                  sizeBytes: size, sha256: sha256)
     }
 
     private static let reazonRevision = "291488c8151be24d7da4bf7af26e533fad96e407"

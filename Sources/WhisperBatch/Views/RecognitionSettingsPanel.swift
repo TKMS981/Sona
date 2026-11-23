@@ -45,11 +45,11 @@ struct RecognitionSettingsPanel: View {
         .padding(14)
     }
 
-    /// Whisper / ReazonSpeech / Apple の切り替え
+    /// Whisper / ReazonSpeech / Apple（Vantage では Qwen3-ASR / Granite も）の切り替え
     private var enginePicker: some View {
         HStack(spacing: 8) {
             Picker(L("settings.engine"), selection: Binding(get: { model.selectedEngine }, set: { model.selectEngine($0) })) {
-                ForEach(SpeechEngine.allCases) { engine in
+                ForEach(SpeechEngine.available(hasAIRuntime: SonaRuntime.ai != nil)) { engine in
                     Text(engine.displayName).tag(engine)
                 }
             }

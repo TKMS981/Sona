@@ -166,7 +166,12 @@ final class AppModel {
         let models = ModelManager()
         self.settings = settings
         self.models = models
-        transcription = TranscriptionService(storage: models.storage)
+        // Qwen3-ASR・Granite は Vantage の AI の実装（llama.cpp）で動かす
+        transcription = TranscriptionService(storage: models.storage, ai: SonaRuntime.ai)
+        // AI の実装がないのに、それが必要な方式が保存されていたら（Vantage の設定を Air で開いたなど）、既定の方式に戻す
+        if settings.selectedModel.engine.requiresAIRuntime, SonaRuntime.ai == nil {
+            settings.selectedModelID = ModelCatalog.defaultModelID
+        }
         live = LiveController(settings: settings, models: models)
         appLanguage = settings.languagePreference.resolved
         Localizer.shared.setLanguage(appLanguage)

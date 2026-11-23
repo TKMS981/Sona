@@ -154,6 +154,7 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 
 - 確からしさの結合テスト（`Tests/WhisperBatchEngineTests/FeatureIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_AUDIO_DIR` と `WHISPER_BATCH_TEST_MODEL`（Whisper）、`WHISPER_BATCH_TEST_REAZON_DIR`（ReazonSpeech k2 v2）、`WHISPER_BATCH_TEST_APPLE_CONFIDENCE`（英語の音声。Apple）を指定したときだけ実行されます
 - Vantage の AI の結合テスト（`Tests/SonaVantageAITests`）は、`WHISPER_BATCH_TEST_LLM_DIR`（カタログのファイル名の GGUF を置いたフォルダ。置いたモデルだけを試す）、`WHISPER_BATCH_TEST_DIARIZATION_DIR` と `WHISPER_BATCH_TEST_DIALOGUE`（話者識別）、`WHISPER_BATCH_TEST_ONDEVICE_AI=1`（Apple Intelligence）を指定したときだけ実行されます。ローカルの言語モデルの取得の中止・再開・照合を実際の通信で試すテスト（`Tests/WhisperBatchEngineTests/LocalLLMDownloadTests.swift`）は `WHISPER_BATCH_TEST_LLM_DOWNLOAD_DIR`（TinySwallow、約 1.1GB を取得）を指定したときだけ実行されます
+- Qwen3-ASR・Granite の結合テスト（`Tests/SonaVantageAITests/SpeechLLMIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_SPEECH_LLM_DIR`（カタログのファイル名の GGUF 4 つを置いたフォルダ）と `WHISPER_BATCH_TEST_AUDIO_DIR` を指定したときだけ実行されます（日本語・英語の自動判定・動画・長い音声の重複と欠落・中止）。Whisper との比較の計測（`SpeechLLMBenchmarks.swift`）は `WHISPER_BATCH_TEST_SPEECH_BENCH`（改行区切りの音声・動画のパス。行末に `|ja` などで言語）と `WHISPER_BATCH_TEST_BENCH_OUT` も必要です。
 - 負荷の計測（`Tests/WhisperBatchEngineTests/ResourceBenchmarks.swift`・`Tests/SonaVantageAITests/ResourceBenchmarks.swift`）は、`WHISPER_BATCH_TEST_BENCH_OUT`（結果を追記するファイル）を指定したときだけ実行されます。一括処理の計測には `WHISPER_BATCH_TEST_AUDIO_DIR`（`long.mp4`）、ローカルの言語モデルの計測には `WHISPER_BATCH_TEST_LLM_DIR` が必要です（計測するモデルは `WHISPER_BATCH_TEST_BENCH_LLM` で変えられます）。最適化の前後で同じテストを実行して比べるためのものです。誤認識の修正の計測（`Tests/SonaVantageAITests/CorrectionBenchmarks.swift`）は同じ環境変数で実行され、正解つきの合成の文字起こしで、入力・生成のトークン数と時間（prompt eval・decode）、後処理の時間、修正の正確さ（直せた・見逃し・誤った修正・不要な修正・守る語の変化）を記録します（`WHISPER_BATCH_TEST_BENCH_INSTRUCTIONS` で指示の案を差し替えて比べられます）
 
 ## 使い方
@@ -192,6 +193,7 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 | | Sona Air（AI なし） | Sona Vantage（AI 搭載） |
 | --- | --- | --- |
 | 文字起こし（Whisper・ReazonSpeech・Apple）・ライブ文字起こし | ✓ | ✓ |
+| 文字起こし（Qwen3-ASR・Granite。llama.cpp で動かす音声の言語モデル） | — | ✓ |
 | 編集・部分修正・削除・原文の復元、確からしさの表示 | ✓ | ✓ |
 | ドラッグ＆ドロップ、TXT / SRT / WebVTT / Markdown の出力、通知、設定の書き出し・読み込み | ✓ | ✓ |
 | AI 誤認識修正（修正候補の確認・自動修正・区間ごとの修正案）、誤認識の候補（要確認）の表示 | — | ✓ |
@@ -603,13 +605,15 @@ WAV、MP3、M4A（AAC / ALAC）、AAC（ADTS）、AIFF、CAF、FLAC、Ogg Vorbis
 
 ## 文字起こしの方式
 
-メイン画面の「方式」で Whisper / ReazonSpeech / Apple を切り替え、「モデル」でその方式のモデル（サイズ）を選びます。「モデル管理…」も方式ごとに一覧を切り替えられます。方式を切り替えて戻ると、前にその方式で選んでいたモデルに戻ります。
+メイン画面の「方式」で Whisper / ReazonSpeech / Apple（Sona Vantage では Qwen3-ASR / Granite も）を切り替え、「モデル」でその方式のモデル（サイズ）を選びます。「モデル管理…」も方式ごとに一覧を切り替えられます。方式を切り替えて戻ると、前にその方式で選んでいたモデルに戻ります。
 
 | 方式 | 言語 | モデルの選択肢 | 取得元 | 特徴 |
 | --- | --- | --- | --- | --- |
 | Whisper | 多言語（自動判定あり） | Tiny 〜 Large v3 の 7 種類 | Hugging Face（ggerganov/whisper.cpp） | 精度が高い。大きいモデルほど遅い |
 | ReazonSpeech | 日本語のみ | 軽量（int8、160 MB）／高精度（615 MB） | Hugging Face（reazon-research/reazonspeech-k2-v2） | 日本語に特化。非常に速い（1 分の音声を数秒） |
 | Apple | 言語を選んで使う（自動判定なし） | SpeechTranscriber／DictationTranscriber | macOS（言語データは OS が管理） | ダウンロード不要で速い。句読点付き |
+| Qwen3-ASR（Vantage） | 多言語（30 言語、自動判定あり） | 1.7B Q8_0（2.5 GB） | Hugging Face（ggml-org/Qwen3-ASR-1.7B-GGUF） | 講義の同音の漢字の誤りが少ない。Whisper の 1.7〜2.3 倍の時間 |
+| Granite（Vantage） | 英・仏・独・西・葡・日（自動判定あり） | 5.0 2B Q8_0（3.1 GB） | Hugging Face（ibm-granite/granite-speech-5.0-2b-GGUF） | 英語に強い。日本語は句読点が不揃い。Whisper の 1.9〜3.6 倍の時間 |
 
 ### Whisper
 
@@ -630,6 +634,38 @@ WAV、MP3、M4A（AAC / ALAC）、AAC（ADTS）、AIFF、CAF、FLAC、Ogg Vorbis
 - モデルのサイズは選べません。言語ごとのデータを macOS が Apple のサーバーから取得して管理し、ほかのアプリと共有します。このアプリからは削除しません。
 - 言語ごとに最初に「言語データを取得…」が必要です（取得済みなら不要。英語は最初から入っていることが多い）。言語の自動判定はないので、Apple を選ぶと「自動判定」は使えません。
 - 結果は語句ごとの時刻を使って文単位の区間にまとめ直します。
+
+### Qwen3-ASR・Granite（音声を直接読む言語モデル、Sona Vantage だけ）
+
+Alibaba の **Qwen3-ASR 1.7B** と IBM の **Granite Speech 5.0 2B** を、AI 機能と同じ llama.cpp（公式 XCFramework b11976 のマルチモーダル＝mtmd）で動かします。どちらもモデル本体の GGUF と音声エンコーダー（mmproj）の GGUF の 2 ファイルで、公開元のコミットに固定して取得し、SHA-256 で検証します（Apache License 2.0）。量子化は公開元の推奨・既定（Qwen3-ASR は両方 Q8_0、Granite は本体 Q8_0・エンコーダー f16）です。Sona Air は llama.cpp を含まないので、この 2 つの方式は表示しません。
+
+- **区切り方と時刻**: これらのモデルは時刻のない文章を返し、1 回に渡せる音声も短い（Granite の推奨は 2 分以内）ため、音声を文の間の無音（0.5 秒以上）で発話ごとに区切り（最長 25 秒。超える場合は最も静かな位置で区切る）、発話ごとに認識して、その発話の範囲を区間の時刻にします。区間は Whisper より長め（講義で平均 13 秒前後）です。無音 0.35 秒・最長 12 秒で区切ると字幕向きの長さになりますが、講義動画で処理が 16% 遅くなり、前後の文脈が減って同音の漢字の誤りが増えたため（「評価→強化」など）、長めに区切っています。
+- **出力**: greedy（毎回もっとも確からしい語）で生成し、同じトークンの並びが続いた（音声にない繰り返し）ときは打ち切って 1 回分だけ残します。Granite が英数字を全角（「ａｉ」）で書くことがあるため、全角の英数字・記号（U+FF01〜FF5E）は半角にします。
+- **言語**: Qwen3-ASR は言語を指定すると返答の冒頭（言語の判定）をこちらで書いて固定し、自動判定では最初に判定できた言語を以降の発話にも使います。Granite は指示文で言語を伝えます（モデルカードの推奨の英語の指示。日本語で指示しても句読点の付き方は変わりませんでした）。Granite は言語を返さないので、自動判定のときは書き起こした文から言語を推定します。
+
+**この Mac での比較（2026-11、Apple M5 / 32GB、Whisper は Large v3 Turbo Q5_0・精度優先）**
+
+| 音声 | Whisper | Qwen3-ASR | Granite |
+| --- | --- | --- | --- |
+| 講義動画 A（日本語、18.9 分） | 約 40 秒 | 92 秒 | 145 秒 |
+| 講義動画 B（日本語、18.6 分） | 約 42 秒 | 89 秒 | 141 秒 |
+| 講義動画 C（英語、22.1 分） | 約 45 秒 | 77 秒 | 86 秒 |
+| 合成音声（`say`、450 文、37.3 分） | 67〜80 秒 | 147 秒 | 211 秒 |
+| 合成音声の正解との文字誤り率（漢数字は算用数字にそろえる） | 3.7〜5.8% | 4.9% | 0.2% |
+| 合成音声の文番号の重複・欠落 | 9〜37 件 | 0 件 | 0 件（番号の書き誤り 6 件） |
+
+- 合成音声では、Qwen3-ASR の誤りのほとんどが「文で」を「分で」と書く同音の誤り（450 文中 390 文）でした。1 文ずつ区切られて文脈がないためです。Granite はほぼ正確でした。どちらも 450 文を 450 区間に過不足なく区切りました。
+- 講義動画には正解がないため、出力を読み比べました。冒頭 3 分では Qwen3-ASR が最も正確で（「主張が明確か」「一次情報で照合」「アウトライン主導」を正しく認識）、Whisper は同音の漢字の誤り（「赤確」「一時情報で称号」）、Granite は別の誤り（「まとめで占める」「スイカ（追加）」）がありました。3 つの出力どうしの不一致は 2〜4% で、同じ Whisper を 2 回行ったときのばらつき（0〜1.2%）より大きく、どれが正しいかは箇所によります。
+- 正解つきの実音声での精度、雑音の多い音声、M5 以外の Mac での速度は計測していません。
+
+### NVIDIA Nemotron 3.5 Transcribe（Mac 版には実装しない）
+
+英語の公開ランキングで最も精度が高いとされるモデル（2026-10 公開、OpenMDW-1.1、40 言語）ですが、**Mac 版の Sona には実装せず、Windows 版で実装します**（利用者の方針。Windows のメイン PC の NVIDIA GPU で動かす）。
+
+Mac 版で扱わない理由:
+
+- 総パラメーター約 34B（動くのは約 4.3B）の混合専門家型で、量子化しても 18 GB 前後のメモリが要ると見積もられており、Sona のローカルモデルの上限（物理メモリの 60%）では多くの Mac に載りません。
+- 公式の実行方法は NVIDIA GPU 上の vLLM（NeMo Speech のプラグイン）または Transformers だけです。Apple Silicon 向けは有志の MLX 版（Python）だけで、有志の GGUF も通常の llama.cpp では読み込めない形式のため、アプリに組み込む公式の手段がありません（2026-11 時点）。
 
 ## モデルの取得と保存
 
@@ -774,7 +810,7 @@ Sources/WhisperBatchEngine/       AVFoundation・whisper.cpp・sherpa-onnx・Spe
   TemporaryWorkspace.swift          プロセスごとの一時フォルダ（ライブの録音・変換用の MP3）
   ModelDownloader.swift             モデルの取得（接続先・大きさ・SHA-256 の確認）
   ModelStorage.swift                モデルの保存先、取得済みの判定、読み込み前の照合
-Sources/SonaLLM/                  ローカルの言語モデル（llama.cpp）の読み込み・推論・解放（Vantage だけ）
+Sources/SonaLLM/                  ローカルの言語モデル（llama.cpp）の読み込み・推論・解放、音声を読むモデル（mtmd）の認識（Vantage だけ）
 Sources/SonaVantageAI/            Vantage の AI の実装（AIRuntime: ローカルの言語モデル・Apple Intelligence の端末内のモデル・話者識別）
 Sources/SonaVantage/、SonaAir/    エディションごとの起動（実行ファイル）
 Sources/WhisperBatch/Live/        ライブ文字起こしの画面側（ピッカー、ゴーストモード、ショートカット）

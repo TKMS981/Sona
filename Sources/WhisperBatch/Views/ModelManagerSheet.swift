@@ -18,7 +18,7 @@ struct ModelManagerSheet: View {
             Text(L("models.title"))
                 .appFont(.title2, weight: .semibold)
             Picker(L("settings.engine"), selection: Binding(get: { shownEngine }, set: { engine = $0 })) {
-                ForEach(SpeechEngine.allCases) { e in
+                ForEach(SpeechEngine.available(hasAIRuntime: SonaRuntime.ai != nil)) { e in
                     Text(e.displayName).tag(e)
                 }
             }

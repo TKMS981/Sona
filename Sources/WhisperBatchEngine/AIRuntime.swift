@@ -36,6 +36,10 @@ public protocol AIRuntime: AnyObject, Sendable {
     /// モデルの、再利用のために残している AI の結果を消す（モデルの削除・更新のとき）
     func invalidateCachedResults(modelID: String) async
 
+    /// 音声を直接読む言語モデル（Qwen3-ASR・Granite Speech）で文字起こしする認識器を読み込む。
+    /// モデルのファイルは呼び出し側が照合してから渡す。返した認識器を手放すと解放する。
+    func speechTranscriber(for model: SpeechModel, storage: ModelStorage) async throws -> any Transcriber
+
     /// 話者を識別する（話者識別のモデルが必要）
     @MainActor
     func identifySpeakers(item: QueueItem, storage: ModelStorage, speakerCount: Int?,

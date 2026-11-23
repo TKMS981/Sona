@@ -580,8 +580,11 @@ enum LlamaLogging {
         let verbose = ProcessInfo.processInfo.environment["WHISPER_BATCH_VERBOSE"] == "1"
         if verbose {
             llama_log_set({ _, text, _ in if let text { fputs(text, stderr) } }, nil)
+            mtmd_helper_log_set({ _, text, _ in if let text { fputs(text, stderr) } }, nil)
         } else {
             llama_log_set({ _, _, _ in }, nil)
+            // 音声を読むモデル（mtmd）のログも同じく出さない
+            mtmd_helper_log_set({ _, _, _ in }, nil)
         }
     }()
 

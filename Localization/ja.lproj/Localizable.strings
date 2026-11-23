@@ -92,9 +92,16 @@
 "engine.apple.name" = "Apple";
 "engine.apple.source" = "macOS 標準の音声認識です。言語データは macOS が Apple のサーバーから取得し、ほかのアプリと共有して管理します（このアプリからは削除しません）。文字起こしはこの Mac 内で行い、音声や結果は送信しません。";
 "engine.apple.summary" = "macOS 標準の音声認識（Speech フレームワーク）。言語データは macOS が管理します。";
+"engine.graniteSpeech.name" = "Granite";
+"engine.graniteSpeech.source" = "取得元: huggingface.co/ibm-granite/granite-speech-5.0-2b-GGUF（Apache License 2.0、IBM）。公開時点の版に固定し、ファイルごとに SHA-256 で検証します。通信はモデルの取得時だけで、音声や結果は送信しません。";
+"engine.graniteSpeech.summary" = "IBM の Granite Speech 5.0（音声を直接読む言語モデル、llama.cpp で実行）。英語・フランス語・ドイツ語・スペイン語・ポルトガル語・日本語に対応します。";
+"engine.qwen3ASR.name" = "Qwen3-ASR";
+"engine.qwen3ASR.source" = "取得元: huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF（Apache License 2.0。元のモデルは Alibaba の Qwen チームが公開）。公開時点の版に固定し、ファイルごとに SHA-256 で検証します。通信はモデルの取得時だけで、音声や結果は送信しません。";
+"engine.qwen3ASR.summary" = "Alibaba の Qwen3-ASR（音声を直接読む言語モデル、llama.cpp で実行）。日本語を含む 30 言語に対応し、自動判定もできます。";
 "engine.reazonSpeech.name" = "ReazonSpeech";
 "engine.reazonSpeech.source" = "取得元: huggingface.co/reazon-research/reazonspeech-k2-v2（Apache License 2.0、株式会社レアゾン・ホールディングス）。公開時点の版に固定し、ファイルごとに SHA-256 で検証します。通信はモデルの取得時だけで、音声や結果は送信しません。";
 "engine.reazonSpeech.summary" = "日本語専用のモデル（レアゾン・ホールディングスが公開、sherpa-onnx で実行）。日本語の音声を大量に学習しています。";
+"engine.requiresVantage" = "%@ は Sona Vantage でだけ使えます。";
 "engine.whisper.name" = "Whisper";
 "engine.whisper.source" = "取得元: huggingface.co/ggerganov/whisper.cpp（MIT License。元の Whisper モデルは OpenAI が MIT License で公開）。通信はモデルの取得時だけで、音声や結果は送信しません。";
 "engine.whisper.summary" = "OpenAI の多言語モデル（whisper.cpp で実行）。日本語を含む多くの言語に対応し、自動判定もできます。";
@@ -147,7 +154,7 @@
 "format.reject.noExtension" = "拡張子がありません";
 "format.reject.notMedia" = ".%@ は音声・動画ファイルではありません";
 "format.reject.unknownType" = ".%@ は音声・動画ファイルとして認識できません";
-"format.summary" = "音声: WAV・MP3・M4A（AAC/ALAC）・AAC・AIFF・CAF・FLAC・Ogg/Opus　動画: MP4・MOV・M4V・3GP・MPEG（.mpg）・MPEG-TS（.ts）（音声を MP3 に変換して処理）";
+"format.summary" = "音声: WAV・MP3・M4A（AAC/ALAC）・AAC・AIFF・CAF・FLAC・Ogg/Opus　動画: MP4・MOV・M4V・3GP・MPEG（.mpg）・MPEG-TS（.ts）";
 "list.andMore" = "%1$@ ほか%2$ld件";
 "list.separator" = "、";
 "live.action.hide" = "隠す";
@@ -296,6 +303,8 @@
 "model.download" = "ダウンロード…";
 "model.downloadAssets" = "言語データを取得…";
 "model.downloading.accessibility" = "モデルのダウンロード";
+"model.granite-speech-5.0-2b.name" = "Granite Speech 5.0 2B（Q8_0）";
+"model.granite-speech-5.0-2b.summary" = "英語に強いモデル。本体と音声エンコーダーの 2 ファイルです。";
 "model.installingAssets" = "言語データを取得しています…";
 "model.large-v3-turbo-q5_0.name" = "Large v3 Turbo（量子化 Q5_0）";
 "model.large-v3-turbo-q5_0.summary" = "おすすめ。高精度で速く、サイズも小さめです。";
@@ -306,6 +315,8 @@
 "model.loading" = "モデルを読み込んでいます…";
 "model.medium.name" = "Medium";
 "model.medium.summary" = "高精度だが Large v3 Turbo より遅めです。";
+"model.qwen3-asr-1.7b.name" = "Qwen3-ASR 1.7B（Q8_0）";
+"model.qwen3-asr-1.7b.summary" = "会話や雑音のある音声に強いモデル。本体と音声エンコーダーの 2 ファイルです。";
 "model.reazonspeech-k2-v2-int8.name" = "ReazonSpeech k2 v2（軽量 int8）";
 "model.reazonspeech-k2-v2-int8.summary" = "おすすめ。量子化で小さく速く、精度の低下はわずかです。";
 "model.reazonspeech-k2-v2.name" = "ReazonSpeech k2 v2（高精度）";
@@ -332,6 +343,8 @@
 "models.inUse" = "使用中";
 "models.list.accessibility" = "モデルの一覧";
 "models.message.apple" = "macOS 標準の音声認識です。モデルのサイズは選べず、言語ごとのデータを macOS が管理します。文字起こしの言語（自動判定は不可）ごとに、最初に言語データの取得が必要です。";
+"models.message.graniteSpeech" = "IBM の Granite Speech 5.0 2B です（llama.cpp で実行）。発話（文の間の無音）ごとに区切って認識し、区間の時刻は区切った発話の範囲になります。ダウンロードしたモデルはこの Mac に保存され、文字起こしはオフラインで行えます。";
+"models.message.qwen3ASR" = "Alibaba の Qwen3-ASR 1.7B です（llama.cpp で実行）。発話（文の間の無音）ごとに区切って認識し、区間の時刻は区切った発話の範囲になります。ダウンロードしたモデルはこの Mac に保存され、文字起こしはオフラインで行えます。";
 "models.message.reazonSpeech" = "日本語専用の ReazonSpeech モデル（k2 v2）です。軽量版（int8 量子化）と高精度版から選べます。発話（文の間の無音）ごとに区切って認識します。ダウンロードしたモデルはこの Mac に保存され、文字起こしはオフラインで行えます。";
 "models.message.whisper" = "whisper.cpp 用の Whisper モデル（ggml 形式）です。大きいモデルほど精度が上がり、処理は遅くなります。ダウンロードしたモデルはこの Mac に保存され、文字起こしはオフラインで行えます。";
 "models.recommended" = "おすすめ";

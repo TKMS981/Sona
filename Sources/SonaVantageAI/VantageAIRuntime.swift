@@ -78,6 +78,10 @@ public final class VantageAIRuntime: AIRuntime {
         await cache.invalidate(modelID: modelID)
     }
 
+    public func speechTranscriber(for model: SpeechModel, storage: ModelStorage) async throws -> any Transcriber {
+        try await SpeechLLMTranscriber.load(model: model, storage: storage)
+    }
+
     @MainActor
     public func identifySpeakers(item: QueueItem, storage: ModelStorage, speakerCount: Int?,
                                  onRefresh: @escaping @MainActor (SecurityScopedAccess.RefreshedBookmark) -> Void,

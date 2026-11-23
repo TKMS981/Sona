@@ -92,9 +92,16 @@
 "engine.apple.name" = "Apple";
 "engine.apple.source" = "The speech recognition built into macOS. macOS downloads the language data from Apple's servers and manages it, shared with other apps (this app does not delete it). Transcription runs on this Mac. Audio and results are never sent.";
 "engine.apple.summary" = "The speech recognition built into macOS (Speech framework). Language data is managed by macOS.";
+"engine.graniteSpeech.name" = "Granite";
+"engine.graniteSpeech.source" = "Source: huggingface.co/ibm-granite/granite-speech-5.0-2b-GGUF (Apache License 2.0, IBM). Pinned to a fixed revision and each file is verified with SHA-256. The network is used only to download models. Audio and results are never sent.";
+"engine.graniteSpeech.summary" = "IBM Granite Speech 5.0, a language model that reads audio directly (run with llama.cpp). Supports English, French, German, Spanish, Portuguese, and Japanese.";
+"engine.qwen3ASR.name" = "Qwen3-ASR";
+"engine.qwen3ASR.source" = "Source: huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF (Apache License 2.0; the original model was released by Alibaba's Qwen team). Pinned to a fixed revision and each file is verified with SHA-256. The network is used only to download models. Audio and results are never sent.";
+"engine.qwen3ASR.summary" = "Alibaba Qwen3-ASR, a language model that reads audio directly (run with llama.cpp). Supports 30 languages, including Japanese, and can detect the language automatically.";
 "engine.reazonSpeech.name" = "ReazonSpeech";
 "engine.reazonSpeech.source" = "Source: huggingface.co/reazon-research/reazonspeech-k2-v2 (Apache License 2.0, Reazon Holdings, Inc.). Pinned to a fixed revision and each file is verified with SHA-256. The network is used only to download models. Audio and results are never sent.";
 "engine.reazonSpeech.summary" = "A Japanese-only model released by Reazon Holdings, run with sherpa-onnx. Trained on a large amount of Japanese speech.";
+"engine.requiresVantage" = "%@ is available only in Sona Vantage.";
 "engine.whisper.name" = "Whisper";
 "engine.whisper.source" = "Source: huggingface.co/ggerganov/whisper.cpp (MIT License; the original Whisper models were released by OpenAI under the MIT License). The network is used only to download models. Audio and results are never sent.";
 "engine.whisper.summary" = "OpenAI's multilingual model (run with whisper.cpp). Supports many languages, including Japanese, and can detect the language automatically.";
@@ -147,7 +154,7 @@
 "format.reject.noExtension" = "no file extension";
 "format.reject.notMedia" = ".%@ is not an audio or video file";
 "format.reject.unknownType" = ".%@ is not recognized as audio or video";
-"format.summary" = "Audio: WAV, MP3, M4A (AAC/ALAC), AAC, AIFF, CAF, FLAC, Ogg/Opus. Video: MP4, MOV, M4V, 3GP, MPEG (.mpg), MPEG-TS (.ts) (audio is converted to MP3 first)";
+"format.summary" = "Audio: WAV, MP3, M4A (AAC/ALAC), AAC, AIFF, CAF, FLAC, Ogg/Opus. Video: MP4, MOV, M4V, 3GP, MPEG (.mpg), MPEG-TS (.ts)";
 "list.andMore" = "%1$@ and %2$ld more";
 "list.separator" = ", ";
 "live.action.hide" = "Hide";
@@ -296,6 +303,8 @@
 "model.download" = "Download…";
 "model.downloadAssets" = "Get Language Data…";
 "model.downloading.accessibility" = "Model download";
+"model.granite-speech-5.0-2b.name" = "Granite Speech 5.0 2B (Q8_0)";
+"model.granite-speech-5.0-2b.summary" = "Strong in English. Two files: the model and its audio encoder.";
 "model.installingAssets" = "Downloading language data…";
 "model.large-v3-turbo-q5_0.name" = "Large v3 Turbo (Q5_0 quantized)";
 "model.large-v3-turbo-q5_0.summary" = "Recommended. Accurate, fast, and relatively small.";
@@ -306,6 +315,8 @@
 "model.loading" = "Loading the model…";
 "model.medium.name" = "Medium";
 "model.medium.summary" = "Accurate, but slower than Large v3 Turbo.";
+"model.qwen3-asr-1.7b.name" = "Qwen3-ASR 1.7B (Q8_0)";
+"model.qwen3-asr-1.7b.summary" = "Strong on conversation and noisy audio. Two files: the model and its audio encoder.";
 "model.reazonspeech-k2-v2-int8.name" = "ReazonSpeech k2 v2 (Light, int8)";
 "model.reazonspeech-k2-v2-int8.summary" = "Recommended. Quantized to be smaller and faster, with only a slight loss in accuracy.";
 "model.reazonspeech-k2-v2.name" = "ReazonSpeech k2 v2 (High Accuracy)";
@@ -332,6 +343,8 @@
 "models.inUse" = "In Use";
 "models.list.accessibility" = "Models";
 "models.message.apple" = "The speech recognition built into macOS. You can't choose a model size; macOS manages the data for each language. Language data must be downloaded once for each transcription language (automatic detection isn't available).";
+"models.message.graniteSpeech" = "IBM Granite Speech 5.0 2B (run with llama.cpp). Audio is split at pauses and recognized one utterance at a time; each segment's time is the range of that utterance. Downloaded models are stored on this Mac, so transcription works offline.";
+"models.message.qwen3ASR" = "Alibaba Qwen3-ASR 1.7B (run with llama.cpp). Audio is split at pauses and recognized one utterance at a time; each segment's time is the range of that utterance. Downloaded models are stored on this Mac, so transcription works offline.";
 "models.message.reazonSpeech" = "ReazonSpeech (k2 v2) models for Japanese only. Choose the light version (int8 quantized) or the high-accuracy version. Audio is split at pauses and recognized one utterance at a time. Downloaded models are stored on this Mac, so transcription works offline.";
 "models.message.whisper" = "Whisper models for whisper.cpp (ggml format). Larger models are more accurate but slower. Downloaded models are stored on this Mac, so transcription works offline.";
 "models.recommended" = "Recommended";
