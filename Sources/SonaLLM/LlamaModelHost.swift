@@ -29,8 +29,16 @@ public actor LlamaModelHost {
     /// 使い終わってから自動で解放するまでの時間（nil なら自動では解放しない）
     public let idleTimeout: Duration?
 
+    /// 読み込みの設定（アプリでは常に `.standard`。計測で比べるときだけ変える）
+    let loadConfig: LlamaLoadConfig
+
     public init(idleTimeout: Duration? = .seconds(180)) {
+        self.init(idleTimeout: idleTimeout, loadConfig: .standard)
+    }
+
+    init(idleTimeout: Duration?, loadConfig: LlamaLoadConfig) {
         self.idleTimeout = idleTimeout
+        self.loadConfig = loadConfig
     }
 
     /// 読み込んでいるモデルの id
@@ -67,7 +75,7 @@ public actor LlamaModelHost {
             }
             transitioning = true
             do {
-                let new = try await LoadedLlamaModel.load(spec: model, fileURL: fileURL)
+                let new = try await LoadedLlamaModel.load(spec: model, fileURL: fileURL, config: loadConfig)
                 loaded = new
                 releaseWhenIdle = false
                 transitioning = false
@@ -237,15 +245,50 @@ final class LlamaLease: Sendable {
     }
 }
 
+/// 読み込みに使う設定（バッチ・スレッド・KV キャッシュの型など）。結果の再利用の条件（`LlamaInferenceSettings.signature`）にもこの値を含める。
+/// アプリは `standard` だけを使う。ほかの値は計測（ベンチマーク）で比べるときだけ使う。
+struct LlamaLoadConfig: Sendable, Equatable {
+    /// KV キャッシュの型
+    enum CacheType: String, Sendable {
+        case f16, q8_0
+        var ggml: ggml_type { self == .f16 ? GGML_TYPE_F16 : GGML_TYPE_Q8_0 }
+    }
+
+    /// GPU に置く層の数（-1 はすべて）
+    var gpuLayers: Int32 = -1
+    /// 1 回の llama_decode に渡す数（n_batch）
+    var batch: UInt32 = 512
+    /// GPU が一度に計算する数（n_ubatch。batch 以下）
+    var ubatch: UInt32 = 512
+    var threads: Int32 = LlamaLoadConfig.defaultThreads
+    var cacheK: CacheType = .f16
+    var cacheV: CacheType = .f16
+
+    /// アプリで使う設定
+    static let standard = LlamaLoadConfig()
+
+    static let defaultThreads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
+
+    /// 性能コアの数（hw.perflevel0.physicalcpu。取れなければ nil）
+    static var performanceCores: Int32? {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("hw.perflevel0.physicalcpu", &value, &size, nil, 0) == 0, value > 0 else { return nil }
+        return value
+    }
+
+    /// 結果の再利用の条件に含める文字列。従来の設定（KV キャッシュが f16）のときは以前と同じ文字列になる。
+    var signature: String {
+        var text = "gpu_layers=\(gpuLayers);n_batch=\(batch);n_ubatch=\(ubatch);n_seq_max=1;threads=\(threads)"
+        if cacheK != .f16 || cacheV != .f16 { text += ";type_k=\(cacheK.rawValue);type_v=\(cacheV.rawValue)" }
+        return text
+    }
+}
+
 /// 推論の設定（読み込みと生成で実際に使う値）。結果の再利用（`AIResultCache`）の条件にも、この値をそのまま含める。
 public enum LlamaInferenceSettings {
     /// llama.cpp の版（Package.swift の XCFramework）
     public static let runtimeVersion = "llama.cpp b11976"
-    /// GPU に置く層の数（-1 はすべて）
-    static let gpuLayers: Int32 = -1
-    /// 入力をまとめて処理する数（n_batch・n_ubatch）
-    static let batch: UInt32 = 512
-    static let threads = Int32(max(2, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
     // greedy でないときのサンプリング（要約）
     static let topK: Int32 = 40
     static let topP: Float = 0.9
@@ -253,8 +296,10 @@ public enum LlamaInferenceSettings {
     static let seed: UInt32 = 1234
 
     /// 結果の再利用の条件に含める文字列（値が 1 つでも変われば別の条件になる）
-    public static var signature: String {
-        "\(runtimeVersion);gpu_layers=\(gpuLayers);n_batch=\(batch);n_ubatch=\(batch);n_seq_max=1;threads=\(threads)"
+    public static var signature: String { signature(for: .standard) }
+
+    static func signature(for config: LlamaLoadConfig) -> String {
+        "\(runtimeVersion);\(config.signature)"
             + ";top_k=\(topK);top_p=\(topP);temp=\(temperature);seed=\(seed)"
     }
 }
@@ -265,25 +310,27 @@ final class LoadedLlamaModel: @unchecked Sendable {
     private let queue: DispatchQueue
     private var model: OpaquePointer?
     private var context: OpaquePointer?
-    private let batchSize = Int32(LlamaInferenceSettings.batch)
+    let config: LlamaLoadConfig
+    private var batchSize: Int32 { Int32(config.batch) }
     /// アプリの終了時に、実行中の推論を打ち切る
     private let aborted = LlamaCancellation()
     /// 最後に終わった生成の内訳（計測用。推論には影響しない）
     private let stats = Mutex<LlamaRunStats?>(nil)
     var lastRunStats: LlamaRunStats? { stats.withLock { $0 } }
 
-    private init(spec: LocalLLM, model: OpaquePointer, context: OpaquePointer, queue: DispatchQueue) {
+    private init(spec: LocalLLM, config: LlamaLoadConfig, model: OpaquePointer, context: OpaquePointer, queue: DispatchQueue) {
         self.spec = spec
+        self.config = config
         self.model = model
         self.context = context
         self.queue = queue
     }
 
-    static func load(spec: LocalLLM, fileURL: URL) async throws -> LoadedLlamaModel {
+    static func load(spec: LocalLLM, fileURL: URL, config: LlamaLoadConfig = .standard) async throws -> LoadedLlamaModel {
         LlamaLogging.configure()
         let queue = DispatchQueue(label: "Sona.llama", qos: .userInitiated)
         let path = fileURL.path
-        let settings = LlamaInferenceSettings.self
+        let settings = config
         let threads = settings.threads
         let handle: (OpaquePointer?, OpaquePointer?) = await withCheckedContinuation { continuation in
             queue.async {
@@ -296,10 +343,16 @@ final class LoadedLlamaModel: @unchecked Sendable {
                 var cparams = llama_context_default_params()
                 cparams.n_ctx = UInt32(spec.contextTokens)
                 cparams.n_batch = settings.batch
-                cparams.n_ubatch = settings.batch
+                cparams.n_ubatch = min(settings.ubatch, settings.batch)
                 cparams.n_seq_max = 1
                 cparams.n_threads = threads
                 cparams.n_threads_batch = threads
+                if settings.cacheK != .f16 || settings.cacheV != .f16 {
+                    cparams.type_k = settings.cacheK.ggml
+                    cparams.type_v = settings.cacheV.ggml
+                    // 量子化した V キャッシュは Flash Attention が必要（使えなければ読み込みに失敗する）
+                    cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED
+                }
                 guard let context = llama_init_from_model(model, cparams) else {
                     llama_model_free(model)
                     continuation.resume(returning: (nil, nil))
@@ -311,7 +364,7 @@ final class LoadedLlamaModel: @unchecked Sendable {
         guard let model = handle.0, let context = handle.1 else {
             throw WhisperBatchError.modelLoadFailed(modelName: spec.displayName)
         }
-        return LoadedLlamaModel(spec: spec, model: model, context: context, queue: queue)
+        return LoadedLlamaModel(spec: spec, config: config, model: model, context: context, queue: queue)
     }
 
     /// 実行中・これからの推論を打ち切る（アプリの終了時）

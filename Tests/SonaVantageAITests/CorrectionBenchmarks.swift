@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Synchronization
 import Testing
@@ -10,6 +11,8 @@ import WhisperBatchEngine
 //   WHISPER_BATCH_TEST_LLM_DIR   : カタログのファイル名の GGUF を置いたフォルダ
 //   WHISPER_BATCH_TEST_BENCH_LLM : 計測するモデルの id（カンマ区切り。既定 tinyswallow-1.5b,qwen3-4b）
 //   WHISPER_BATCH_TEST_BENCH_INSTRUCTIONS : （任意）まとめての修正の指示を差し替えるフォルダ（ja.txt・en.txt）。指示の案を比べるとき用
+//   WHISPER_BATCH_TEST_BENCH_LLAMA : （任意）読み込みの設定を変えて比べる（例 "batch=2048,ubatch=1024,threads=perf,kv=q8_0"。
+//                                    threads は数か perf＝性能コアの数。指定のない項目はアプリの設定のまま）
 // 誤りを入れた合成の文字起こし（正解つき）で、画面と同じ AITaskRunner の処理を行う。結果の再利用（AIResultCache）は通さない。
 
 private let env = ProcessInfo.processInfo.environment
@@ -27,6 +30,33 @@ private let instructionOverrides: [String: String] = {
     }
     return result
 }()
+
+/// 計測する読み込みの設定（指定がなければアプリと同じ）
+private let loadConfig: LlamaLoadConfig = {
+    var config = LlamaLoadConfig.standard
+    for item in (env["WHISPER_BATCH_TEST_BENCH_LLAMA"] ?? "").split(separator: ",") {
+        let kv = item.split(separator: "=", maxSplits: 1).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard kv.count == 2 else { continue }
+        switch kv[0] {
+        case "batch": config.batch = UInt32(kv[1]) ?? config.batch
+        case "ubatch": config.ubatch = UInt32(kv[1]) ?? config.ubatch
+        case "threads": config.threads = kv[1] == "perf" ? (LlamaLoadConfig.performanceCores ?? 4) : (Int32(kv[1]) ?? config.threads)
+        case "kv": if let type = LlamaLoadConfig.CacheType(rawValue: kv[1]) { config.cacheK = type; config.cacheV = type }
+        default: break
+        }
+    }
+    return config
+}()
+
+/// このプロセスが使っているメモリ（phys_footprint。Metal に置いたモデル・KV キャッシュも含む）
+private func footprintMB() -> Int {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+    }
+    return result == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : 0
+}
 
 private func append(_ line: String, to url: URL) {
     let data = Data((line + "\n").utf8)
@@ -219,13 +249,15 @@ struct CorrectionBenchmarks {
         try await storage.verifyContents(of: download)
         let verify = clock.now - t
 
-        let host = LlamaModelHost()
+        let host = LlamaModelHost(idleTimeout: .seconds(180), loadConfig: loadConfig)
+        let memBefore = footprintMB()
         // 生成器はこの中だけで持つ（抜けたら手放す）
         do {
             t = clock.now
             let leased = try await host.generator(for: model, fileURL: dest)
             let load = clock.now - t
-            record("load\t\(label)\t\(id)\tverifySeconds=\(f(sec(verify)))\tloadSeconds=\(f(sec(load)))")
+            record("load\t\(label)\t\(id)\tverifySeconds=\(f(sec(verify)))\tloadSeconds=\(f(sec(load)))"
+                + "\tmemBeforeMB=\(memBefore)\tmemLoadedMB=\(footprintMB())\tconfig=\(loadConfig.signature)")
             let generator = MeasuringGenerator(base: try #require(leased as? LlamaGenerator))
 
             for set in datasets {
@@ -295,6 +327,22 @@ struct CorrectionBenchmarks {
                     + "\ttotalSeconds=\(f(sec(total)))\tresult=\(verdict)")
                 recordOutput("\(label) \(id) suggest #\(target + 1)", "raw: \(call.raw)\nsuggestion: \(suggestion ?? "nil")")
             }
+
+            // 長い入力（要約。入力の処理＝バッチの大きさの影響を見る）
+            let long = Transcript(segments: (0 ..< 3).flatMap { _ in meetingJA }.enumerated().map { i, s in
+                TranscriptSegment(start: Double(i) * 4, end: Double(i) * 4 + 4, text: s.correct)
+            }, language: "ja")
+            let longLines = LocalAIText.lines(original: long, edits: TranscriptEdits(), speakerNames: [:])
+            generator.reset()
+            t = clock.now
+            let summary = try await AITaskRunner.summarize(longLines, generator: generator, languageCode: "ja")
+            let summaryTotal = clock.now - t
+            let sc = generator.calls
+            record("summary\t\(label)\t\(id)\tcalls=\(sc.count)\tpromptTokens=\(sc.map(\.stats.promptTokens).reduce(0, +))"
+                + "\tpromptSeconds=\(f(sc.map { sec($0.stats.promptDuration) }.reduce(0, +)))"
+                + "\tgenTokens=\(sc.map(\.stats.generatedTokens).reduce(0, +))\tdecodeSeconds=\(f(sc.map { sec($0.stats.decodeDuration) }.reduce(0, +)))"
+                + "\ttotalSeconds=\(f(sec(summaryTotal)))\tmemAfterRunsMB=\(footprintMB())")
+            recordOutput("\(label) \(id) summary", summary.joined(separator: "\n"))
         }
         // 生成器を手放してから解放する（持ったままだと使い終わるまで解放されず、終了時に ggml-metal が止まる）
         await host.release()
