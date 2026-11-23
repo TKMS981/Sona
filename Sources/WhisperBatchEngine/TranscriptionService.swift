@@ -166,7 +166,7 @@ public final class TranscriptionService {
         while let id = queue.nextPendingID {
             if Task.isCancelled { cancelled = true; break }
             guard let item = queue.item(id) else { continue }
-            do { try queue.markProcessing(id, phase: item.isVideo ? .converting : .transcribing) } catch { continue }
+            do { try queue.markProcessing(id, phase: .transcribing) } catch { continue }
             do {
                 let transcript = try await process(item, context: context, options: options)
                 try queue.markCompleted(id, transcript: transcript)
@@ -190,7 +190,9 @@ public final class TranscriptionService {
         return .make(succeeded: succeeded, failed: failed, wasCancelled: cancelled, remaining: queue.counts.pending)
     }
 
-    /// 1 件分の処理。動画は音声を一時 MP3 に変換してから文字起こしし、一時ファイルは必ず削除する。
+    /// 1 件分の処理。動画も音声ファイルと同じく、音声トラックを AVFoundation で直接読み出して文字起こしする。
+    /// （以前は一時 MP3 に変換してから読んでいたが、同じデコードの後に不可逆な変換が 1 回増えるだけで、
+    ///   講義動画などの計測では変換が全体の 16〜29% を占め、文字起こしの結果に差はなかったため、直接読む）
     private func process(_ item: QueueItem, context: any Transcriber, options: TranscriptionOptions) async throws -> Transcript {
         let id = item.id
         return try await SecurityScopedAccess.withAccess(
@@ -202,22 +204,8 @@ public final class TranscriptionService {
             queue.setMediaKind(id, info.kind)
             if info.duration > 0 { queue.setDuration(id, info.duration) }
 
-            guard info.kind == .video else {
-                try queue.setPhase(id, .transcribing)
-                return try await transcribe(url, id: id, context: context, options: options)
-            }
-
-            try queue.setPhase(id, .converting)
-            let mp3 = try ConversionWorkspace.makeTemporaryMP3URL()
-            defer { ConversionWorkspace.remove(mp3) }
-            // 進捗の表示の更新は間引く（変換の処理そのものは変えない）
-            let gate = ProgressGate()
-            try await MP3Converter.convert(source: url, destination: mp3) { p in
-                guard gate.pass(p) else { return }
-                Task { @MainActor in self.queue.updateProgress(id, phase: .converting, p) }
-            }
             try queue.setPhase(id, .transcribing)
-            return try await transcribe(mp3, id: id, context: context, options: options)
+            return try await transcribe(url, id: id, context: context, options: options)
         }
     }
 

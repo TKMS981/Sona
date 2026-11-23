@@ -105,7 +105,8 @@ struct QueueStateTests {
         var q = queue(1)
         let id = q.items[0].id
         q.setMediaKind(id, .video)
-        #expect(q.item(id)?.statusLabel == L("status.waitingConversion"))
+        // 動画も音声と同じく直接文字起こしするので、待機中の表示は音声と同じ
+        #expect(q.item(id)?.statusLabel == L("status.pending"))
         try q.markProcessing(id, phase: .converting)
         q.updateProgress(id, phase: .converting, 0.8)
         #expect(q.item(id)?.status == .processing(phase: .converting, progress: 0.8))

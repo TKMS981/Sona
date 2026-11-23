@@ -75,7 +75,7 @@
 "detail.showTimestamps" = "タイムスタンプを表示";
 "detail.text.accessibility" = "文字起こし結果";
 "detail.transcribing" = "文字起こし中…";
-"detail.videoSteps" = "動画は、音声を一時的な MP3 に変換してから文字起こしします。一時ファイルは処理後に削除されます。";
+"detail.videoSteps" = "動画は、音声トラックを直接読み取って文字起こしします（一時ファイルは作りません）。音声を MP3 で残したいときは「音声を MP3 で保存…」を使ってください。";
 "download.cancelled" = "ダウンロードをキャンセルしました。";
 "download.confirm.download" = "ダウンロード";
 "download.confirm.message" = "「%1$@」（%2$@）を %3$@ から取得します。\n必要な空き容量の目安: %4$@\n保存先: %5$@\n\n通信はモデルファイルの取得だけです。音声ファイルや文字起こし結果は送信しません。";
@@ -387,7 +387,7 @@
 "queue.menu.reveal" = "Finder で表示";
 "queue.row.failed" = "失敗: %@";
 "queue.row.noSpeech" = "音声なし";
-"queue.row.video.help" = "動画ファイル。音声を MP3 に変換してから文字起こしします。";
+"queue.row.video.help" = "動画ファイル。音声トラックを読み取って文字起こしします。";
 "queue.row.videoLabel" = "%@（動画）";
 "quit.confirm" = "終了";
 "quit.download.message" = "ダウンロード済みの部分は破棄されます。";
@@ -476,7 +476,6 @@
 "status.failed" = "失敗";
 "status.pending" = "待機中";
 "status.transcribing" = "文字起こし中 %ld%%";
-"status.waitingConversion" = "変換待ち";
 "toolbar.addFiles" = "ファイルを追加";
 "toolbar.addFiles.help" = "音声・動画ファイルを追加（⌘O）";
 "toolbar.cancel.help" = "処理を中止（⌘.）";

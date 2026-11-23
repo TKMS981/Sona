@@ -109,19 +109,61 @@ struct VideoConversionTests {
         #expect(!FileManager.default.fileExists(atPath: out.path))
     }
 
-    /// 動画 → MP3 → Whisper の流れで文字起こしできる
+    /// 動画から音声を直接読み出して文字起こしできる（アプリの処理と同じ。対応している動画の形式すべて）
     @Test(.enabled(if: modelPath != nil))
-    func transcribesVideoThroughMP3() async throws {
+    func transcribesVideoDirectly() async throws {
         let url = try #require(modelPath)
         let model = ModelCatalog.all.first { $0.files.first?.name == url.lastPathComponent } ?? ModelCatalog.all[0]
         let ctx = try await WhisperContext.load(model: model, fileURL: url)
-        let mp3 = tempMP3()
-        defer { try? FileManager.default.removeItem(at: mp3) }
-        try await MP3Converter.convert(source: media("ja1.mov"), destination: mp3, progress: { _ in })
-        let t = try await TranscriptionEngine.transcribe(fileURL: mp3, context: ctx, options: .init(language: .japanese), progress: { _ in })
+        for file in ["ja1.mp4", "ja1_hevc.mp4", "ja1.mov", "ja1_alac.mov", "ja1_pcm.mov", "ja1_prores.mov",
+                     "ja1.m4v", "ja1.3gp", "ja1.mpg", "ja1.ts"] {
+            let progress = Recorder()
+            let t = try await TranscriptionEngine.transcribe(fileURL: media(file), context: ctx, options: .init(language: .japanese),
+                                                             progress: { progress.set($0) })
+            let text = TranscriptFormatter.plainText(t)
+            print("video \(file):", text)
+            #expect(text.contains("晴天") || text.contains("テスト"), "\(file)")
+            #expect(progress.value == 1, "\(file)")
+        }
+    }
+
+    /// 動画を直接読み出して短いチャンクに分けても、各文が欠けず二重にもならないこと（音声ファイルの同じテストの動画版）
+    @Test(.enabled(if: modelPath != nil), arguments: [30.0, 45.0])
+    func chunkedLongVideoHasNoGapsOrDuplicates(chunk: Double) async throws {
+        let url = try #require(modelPath)
+        let model = ModelCatalog.all.first { $0.files.first?.name == url.lastPathComponent } ?? ModelCatalog.all[0]
+        let ctx = try await WhisperContext.load(model: model, fileURL: url)
+        let planner = ChunkPlanner(chunkDuration: chunk, tailMargin: 3)
+        let t = try await TranscriptionEngine.transcribe(fileURL: media("long.mp4"), context: ctx,
+                                                         options: .init(language: .japanese, planner: planner), progress: { _ in })
+        for (a, b) in zip(t.segments, t.segments.dropFirst()) {
+            #expect(b.start >= a.start - 0.01)
+        }
         let text = TranscriptFormatter.plainText(t)
-        print("video:", text)
-        #expect(text.contains("晴天") || text.contains("テスト"))
+        // 「一番目」のように漢数字で出ることもあるため、漢数字も数える（文が出ていれば欠落ではない）
+        let numbers = text.matches(of: /([0-9]+|[一二三四五六七八九十]+)\s*番目/).compactMap { number(String($0.1)) }
+        let counts = Dictionary(numbers.map { ($0, 1) }, uniquingKeysWith: +)
+        let duplicated = counts.filter { $0.value > 1 }.keys.sorted()
+        let missing = (1 ... 40).filter { counts[$0] == nil }
+        print("long video (chunk \(chunk)s) duplicated:", duplicated, "missing:", missing)
+        #expect(duplicated.isEmpty)
+        #expect(missing.count <= 2)
+    }
+}
+
+/// 算用数字か漢数字（九十九まで）を数にする
+private func number(_ text: String) -> Int? {
+    if let n = Int(text) { return n }
+    let digits: [Character: Int] = ["一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9]
+    let parts = text.split(separator: "十", omittingEmptySubsequences: false)
+    switch parts.count {
+    case 1: return text.count == 1 ? digits[text.first!] : nil
+    case 2:
+        let tens = parts[0].isEmpty ? 1 : (parts[0].count == 1 ? digits[parts[0].first!] : nil)
+        let ones = parts[1].isEmpty ? 0 : (parts[1].count == 1 ? digits[parts[1].first!] : nil)
+        guard let tens, let ones else { return nil }
+        return tens * 10 + ones
+    default: return nil
     }
 }
 

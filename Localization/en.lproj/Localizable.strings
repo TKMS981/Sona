@@ -75,7 +75,7 @@
 "detail.showTimestamps" = "Show Timestamps";
 "detail.text.accessibility" = "Transcript";
 "detail.transcribing" = "Transcribing…";
-"detail.videoSteps" = "For videos, the audio is first converted to a temporary MP3, then transcribed. The temporary file is deleted afterward.";
+"detail.videoSteps" = "For videos, the audio track is read directly and transcribed (no temporary file is created). To keep the audio as an MP3, use “Save Audio as MP3…”.";
 "download.cancelled" = "The download was cancelled.";
 "download.confirm.download" = "Download";
 "download.confirm.message" = "“%1$@” (%2$@) will be downloaded from %3$@.\nFree space needed: about %4$@\nSaved to: %5$@\n\nThe only network access is downloading the model files. Audio files and transcripts are never sent.";
@@ -387,7 +387,7 @@
 "queue.menu.reveal" = "Show in Finder";
 "queue.row.failed" = "Failed: %@";
 "queue.row.noSpeech" = "No speech";
-"queue.row.video.help" = "Video file. The audio is converted to MP3 before transcription.";
+"queue.row.video.help" = "Video file. Its audio track is read and transcribed.";
 "queue.row.videoLabel" = "%@ (video)";
 "quit.confirm" = "Quit";
 "quit.download.message" = "The partially downloaded file will be discarded.";
@@ -476,7 +476,6 @@
 "status.failed" = "Failed";
 "status.pending" = "Waiting";
 "status.transcribing" = "Transcribing %ld%%";
-"status.waitingConversion" = "Waiting to convert";
 "toolbar.addFiles" = "Add Files";
 "toolbar.addFiles.help" = "Add audio or video files (⌘O)";
 "toolbar.cancel.help" = "Stop processing (⌘.)";

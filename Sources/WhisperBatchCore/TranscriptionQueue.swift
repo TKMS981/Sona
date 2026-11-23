@@ -118,7 +118,7 @@ public struct QueueItem: Identifiable, Equatable, Sendable {
     public var statusLabel: String {
         switch status {
         case .pending:
-            return isVideo ? L("status.waitingConversion") : L("status.pending")
+            return L("status.pending")
         case .processing(let phase, let p):
             let percent = Int((p * 100).rounded(.down))
             return phase == .converting ? L("status.converting", percent) : L("status.transcribing", percent)
