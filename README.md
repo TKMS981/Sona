@@ -155,6 +155,7 @@ WHISPER_BATCH_TEST_DOWNLOAD_DIR=/tmp/wb-models \
 - 確からしさの結合テスト（`Tests/WhisperBatchEngineTests/FeatureIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_AUDIO_DIR` と `WHISPER_BATCH_TEST_MODEL`（Whisper）、`WHISPER_BATCH_TEST_REAZON_DIR`（ReazonSpeech k2 v2）、`WHISPER_BATCH_TEST_APPLE_CONFIDENCE`（英語の音声。Apple）を指定したときだけ実行されます
 - Vantage の AI の結合テスト（`Tests/SonaVantageAITests`）は、`WHISPER_BATCH_TEST_LLM_DIR`（カタログのファイル名の GGUF を置いたフォルダ。置いたモデルだけを試す）、`WHISPER_BATCH_TEST_DIARIZATION_DIR` と `WHISPER_BATCH_TEST_DIALOGUE`（話者識別）、`WHISPER_BATCH_TEST_ONDEVICE_AI=1`（Apple Intelligence）を指定したときだけ実行されます。ローカルの言語モデルの取得の中止・再開・照合を実際の通信で試すテスト（`Tests/WhisperBatchEngineTests/LocalLLMDownloadTests.swift`）は `WHISPER_BATCH_TEST_LLM_DOWNLOAD_DIR`（TinySwallow、約 1.1GB を取得）を指定したときだけ実行されます
 - Qwen3-ASR・Granite の結合テスト（`Tests/SonaVantageAITests/SpeechLLMIntegrationTests.swift`）は、`WHISPER_BATCH_TEST_SPEECH_LLM_DIR`（カタログのファイル名の GGUF 4 つを置いたフォルダ）と `WHISPER_BATCH_TEST_AUDIO_DIR` を指定したときだけ実行されます（日本語・英語の自動判定・動画・長い音声の重複と欠落・中止）。Whisper との比較の計測（`SpeechLLMBenchmarks.swift`）は `WHISPER_BATCH_TEST_SPEECH_BENCH`（改行区切りの音声・動画のパス。行末に `|ja` などで言語）と `WHISPER_BATCH_TEST_BENCH_OUT` も必要です。
+- 長い無音を飛ばす機能のテスト（`Tests/WhisperBatchEngineTests/VoiceActivityTests.swift`）: 既定はオフでモデルを読み込まないこと、モデルが未取得・壊れている・読み込めないときに通知して従来どおり処理すること、Whisper 以外では使わないこと。`WHISPER_BATCH_TEST_VAD_MODEL`（`ggml-silero-v6.2.0.bin`）を指定すると実際のモデルで、読み込み・無音の判定・壊れたファイルと SHA-256 の不一致の検出を、さらに `WHISPER_BATCH_TEST_MODEL` と `WHISPER_BATCH_TEST_VAD_AUDIO`（長い無音を含む音声）を指定すると、時刻が元の音声に合うことを確かめます。VAD のあり・なしの比較の計測（`VoiceActivityBenchmarks.swift`）は `WHISPER_BATCH_TEST_VAD_BENCH`（改行区切りの音声・動画のパス）・`WHISPER_BATCH_TEST_BENCH_OUT` も必要です（比べる設定は `WHISPER_BATCH_TEST_VAD_VARIANTS`）
 - 負荷の計測（`Tests/WhisperBatchEngineTests/ResourceBenchmarks.swift`・`Tests/SonaVantageAITests/ResourceBenchmarks.swift`）は、`WHISPER_BATCH_TEST_BENCH_OUT`（結果を追記するファイル）を指定したときだけ実行されます。一括処理の計測には `WHISPER_BATCH_TEST_AUDIO_DIR`（`long.mp4`）、ローカルの言語モデルの計測には `WHISPER_BATCH_TEST_LLM_DIR` が必要です（計測するモデルは `WHISPER_BATCH_TEST_BENCH_LLM` で変えられます）。最適化の前後で同じテストを実行して比べるためのものです。誤認識の修正の計測（`Tests/SonaVantageAITests/CorrectionBenchmarks.swift`）は同じ環境変数で実行され、正解つきの合成の文字起こしで、入力・生成のトークン数と時間（prompt eval・decode）、後処理の時間、修正の正確さ（直せた・見逃し・誤った修正・不要な修正・守る語の変化）を記録します（`WHISPER_BATCH_TEST_BENCH_INSTRUCTIONS` で指示の案を差し替えて比べられます）
 
 ## 使い方
@@ -311,6 +312,7 @@ Hugging Face の公式・準公式のリポジトリを調べ、ライセンス�
   - 表示言語（下の「表示言語」を参照）
   - **自動開始**: 「ファイルを追加したらすぐに文字起こしを開始する」をオンにすると、ドロップや「ファイルを追加…」の時点で処理を始めます（既定はオフ）。処理中に追加したファイルは今の処理の続きで扱います。モデルが未取得などで開始できないときは、その理由をキューの上に表示します。
   - **Whisper の認識**: 「精度優先（Beam Search）」（既定。ビーム幅 5）と「速度優先（Greedy）」から選びます。Whisper を使うときだけ反映します。Apple M5 / Large v3 Turbo で 64 秒の日本語音声を試したところ、速度優先は約 15% 速く（2.4 秒 → 2.0 秒）、文章はほぼ同じでしたが、字幕の 1 区間が長くなりました（18 区間 → 8 区間）。
+  - **長い無音**: 「長い無音を飛ばす（Silero VAD）」（既定はオフ）。Whisper でファイルを文字起こしするときだけ使います（下の「長い無音を飛ばす（Silero VAD）」を参照）。初回だけ約 0.9 MB のモデルを取得します。
   - **設定のファイル**: 設定を JSON ファイルに書き出し・読み込みます（別の Mac への移行やバックアップ用）。読み込むときは項目ごとに値を確かめ、正しくない値・この Mac にない書体などは読み飛ばして件数を表示します。ゴーストモードと背景画像は含めません。
 - **ライブ**: ゴーストモード（アプリ内の録音表示を隠す。既定はオフ）と、ライブ文字起こし中だけ効く停止・表示のショートカット（下の「ライブ文字起こし」を参照）
 - **編集**: 確からしさの表示のオン・オフ（既定はオン）、「要確認」にする基準（30% / 50% / 70% 未満、既定は 50%）、追加のフィラー
@@ -622,6 +624,32 @@ WAV、MP3、M4A（AAC / ALAC）、AAC（ADTS）、AIFF、CAF、FLAC、Ogg Vorbis
 
 長時間の音声は 16 kHz モノラルで少しずつ読み出し、10 分ごとのチャンクで認識します。チャンクの境界は末尾付近の最も静かな位置に合わせ、境界で切れた区間は次のチャンクで読み直すので、文の途中で切れたり重複したりしにくくなっています。
 
+#### 長い無音を飛ばす（Silero VAD、既定はオフ）
+
+設定の「長い無音を飛ばす」をオンにすると、Whisper でファイルを文字起こしするとき（Air・Vantage の両方。ライブ文字起こしには使いません）、チャンクごとに次のようにします。
+
+1. whisper.framework に含まれる Silero VAD（whisper.cpp の VAD を単体で使う。CPU で動く）で発話区間を探す（しきい値 0.1、最短の発話 100 ms）
+2. **5 秒より長い無音だけ**を、前の発話の後ろ 0.5 秒と次の発話の前 0.5 秒をつないだ 1 秒にする。それより短い無音・発話の前後 0.5 秒・チャンクの先頭と末尾の短い無音はそのまま残す（足す音や作り直す音はなく、残すのは元の音声のサンプルそのもの）
+3. 短くした音声を、いつもと同じ条件（モデル・探索方式・チャンク）で Whisper に渡し、区間の時刻を元の音声の時刻に戻す（残した範囲の中では元の音声との差が一定なので、補間はしない）
+4. 発話が見つからないチャンクは認識しない。VAD のモデルが未取得・壊れている（SHA-256 の不一致）・読み込めない場合は、キューの上に理由を表示して、無音を飛ばさずに（従来どおり）文字起こしする
+
+whisper.cpp 内蔵の VAD（`whisper_full_params.vad`）は使いません。内蔵の VAD は発話だけを約 0.1 秒の間でつなぐため、試したところ、間で分かれていた 3 つの発話が 1 つの区間（3.0〜14.3 秒）にまとまりました（字幕・話者識別の区間が変わる）。Whisper は 1 秒以上の間があれば区間を分けたままにし、0.3 秒では 1 つにまとめました。
+
+**検証（2026-11、Apple M5 / macOS 27.2 / Large v3 Turbo（Q5_0）・精度優先）**: VAD なしを基準に、同じ音声で比べました（合成音声は `say` の 4 種類の声、正解の文と時刻つき。WAV は毎回同じ結果、動画は 3〜5 回の平均）。
+
+| 素材 | CER（なし → あり） | 時間（なし → あり） | 備考 |
+| --- | --- | --- | --- |
+| 5〜60 秒の無音を含む動画（4.5 分） | 23.5% → 0.55% | 4.6 → 1.9 秒 | なしでは無音から「ご視聴ありがとうございました」などを作り、区間の開始が中央値 8.7 秒ずれた（ありでは 0.05 秒） |
+| 同じ動画に部屋の雑音（約 -55 dBFS） | 48.6% → 0.55% | 6.4 → 2.3 秒 | 同上 |
+| 会話・短い発話・小声（0〜-30 dB）・語尾・発話途中の 0.5〜3 秒の間・雑音・BGM（合成、各 1〜1.5 分） | 変化なし（同じ結果） | 0.1〜0.15 秒遅い | 5 秒より長い無音がほとんどないため、音声を変えない。小声 0 dB の素材では末尾の「ご視聴ありがとうございました」が消えた（9.2% → 0%） |
+| 雑音の中の短い相づち（0.1〜0.4 秒、20 語 × 8 本） | 22.7% → 22.9% | 13.6 → 14.8 秒 | 欠落 15 → 17。音声をごくわずかに変えた（10 ms 遅らせる・-0.1 dB）だけでも VAD なしで 15〜17、VAD ありで 17〜20 と揺れる |
+| 実際の講義（日本語 2 本・英語 2 本、各 18〜22 分） | 差 1.07〜1.80%（同じ条件の回どうしの差 0〜2.2%） | 3〜6% 遅い | どちらか一方の全回にだけ現れる 8 文字以上の部分は、日本語 0 件、英語は言い回しの違いが数件 |
+
+- 語頭・語尾（「です」「ます」）、発話途中の間、句読点、文の区切り、話者識別（正解の話者区間・sherpa-onnx の話者識別の結果のどちらを割り当てても）に悪化は見られませんでした。メモリの増加は数 MB 以内です。
+- 比べて採らなかった設定: whisper.cpp の既定のしきい値 0.5・最短の発話 250 ms（雑音の中の相づちを 176 発話中 27 見落とした。0.1 では 2）、1 秒より長い無音をすべて短くする（CER は下がるが、短い相づちの欠落が増え、BGM や -20 dB の素材で悪化）、残す間 1.5・2.0 秒、音量で音があるところも残す（BGM を残して誤認識が戻った）。
+- そのため**既定はオフ**です。長い無音の多い録音（会議の待ち時間・休憩を含む講義など）で効果があり、無音の少ない録音では少し遅くなります。
+- 計測は `Tests/WhisperBatchEngineTests/VoiceActivityBenchmarks.swift`（下の「テスト」）で繰り返せます。
+
 ### ReazonSpeech
 
 株式会社レアゾン・ホールディングスが公開している日本語の音声認識モデル（Zipformer RNN-T、Apache License 2.0）を、k2-fsa の公式 XCFramework（`sherpa-onnx`、ONNX Runtime を内包）で動かします。モデルは公式リポジトリの ONNX ファイルを、公開時のコミットに固定して取得し、ファイルごとに SHA-256 を検証します（コードを含みうる pickle 形式のファイルは使いません）。
@@ -672,6 +700,8 @@ Mac 版で扱わない理由:
 モデルはアプリに同梱していません。利用者が確認ダイアログで同意したときだけ、Hugging Face からダウンロードし、ファイルごとに SHA-256 を検証してから保存します。
 
 **話者識別**（「話者」の画面またはモデル管理の「話者識別」から取得。保存先は `Models/speaker-diarization/`、合計 34.3 MB）: `huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0`（コミット `9403a69`、`model.onnx` 5.99 MB、MIT）と `huggingface.co/csukuangfj/speaker-embedding-models`（コミット `0743f30`、`3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` 28.3 MB、Apache-2.0）。文字起こしのモデルの一覧には出ません。
+
+**無音の検出**（設定の「長い無音を飛ばす」またはモデル管理の「無音を飛ばす」から取得。保存先は `Models/silero-vad/`）: `huggingface.co/ggml-org/whisper-vad`（コミット `9ffd54a`、`ggml-silero-v6.2.0.bin` 885,098 バイト、SHA-256 `2aa269b7…6987`、MIT。元のモデルは Silero VAD v6.2.0、MIT、© Silero Team）。文字起こしのモデルの一覧には出ません。
 
 **Whisper**（`huggingface.co/ggerganov/whisper.cpp`、コミット `5359861` に固定）
 
@@ -739,6 +769,7 @@ UTF-8（BOM なし）・LF で、一時ファイル経由で置き換えるた�
 | ONNX Runtime 1.28.2 | MIT（Microsoft） | sherpa-onnx に静的に組み込み。全文を `App/ThirdPartyNotices.txt` に、ONNX Runtime が使うライブラリの表記を `Contents/Resources/onnxruntime-ThirdPartyNotices.txt` に収録 |
 | Whisper モデル | MIT（OpenAI）。ggml 変換版（Hugging Face `ggerganov/whisper.cpp`）も MIT と表示されています | 同梱せず、利用者がダウンロード |
 | ReazonSpeech モデル（k2 v2） | Apache-2.0（レアゾン・ホールディングス） | 同梱せず、利用者がダウンロード |
+| Silero VAD モデル v6.2.0（ggml 変換版 `ggml-org/whisper-vad`） | MIT（© 2020-present Silero Team。変換版も MIT と表示） | 同梱せず、利用者がダウンロード。許諾文の全文を `App/ThirdPartyNotices.txt` に収録 |
 
 - LGPL のライブラリを含むアプリを配布する場合は、ライセンス文の同梱、ライブラリを差し替えられる形での提供（このアプリは動的ライブラリとして同梱）、LAME のソースの入手方法の案内が必要です。正確な条件は LGPL の本文を確認してください。
 - `libLAME.dylib` を差し替えると、アプリの署名が無効になります。現在のアドホック署名のビルドでは、差し替えたライブラリとアプリを `codesign --force --sign - Contents/Frameworks/libLAME.dylib`、`codesign --force --sign - --entitlements App/WhisperBatch.entitlements "Sona.app"` の順に再署名すれば使えます（別ビルドの libLAME.dylib に差し替えて、動画の変換・文字起こしができることを確認済み）。

@@ -92,6 +92,17 @@ private struct GeneralSettingsTab: View {
                 .padding(.top, 10)
             }
             Section {
+                LabeledContent(L("settings.skipSilence")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(L("settings.skipSilence.toggle"), isOn: $model.skipsLongSilence)
+                            .toggleStyle(.checkbox)
+                        SettingNote(text: L("settings.skipSilence.note"))
+                        SkipSilenceModelStatus()
+                    }
+                }
+                .padding(.top, 10)
+            }
+            Section {
                 LabeledContent(L("settings.transfer")) {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -111,6 +122,43 @@ private struct GeneralSettingsTab: View {
             }
         }
         .padding(20)
+    }
+}
+
+/// 無音を飛ばすのに使う Silero VAD のモデルの状態（取得していなければ取得の確認を開く）
+private struct SkipSilenceModelStatus: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let vad = ModelCatalog.voiceActivity
+        switch model.models.state(for: vad) {
+        case .installed:
+            Label(L("settings.skipSilence.model.installed", vad.sizeText), systemImage: "checkmark.circle.fill")
+                .appFont(.caption)
+                .foregroundStyle(.secondary)
+        case .downloading(let received, let total):
+            let fraction = total > 0 ? Double(received) / Double(total) : 0
+            ProgressView(value: fraction) { Text(L("settings.skipSilence.model.downloading")).appFont(.caption) }
+                .controlSize(.small)
+                .frame(maxWidth: 240)
+        case .verifying:
+            Text(L("models.state.verifyingShort")).appFont(.caption).foregroundStyle(.secondary)
+        case .failed(let message, let canResume):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message).appFont(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                Button(canResume ? L("model.resume") : L("model.retry")) { model.models.download(vad) }
+                    .controlSize(.small)
+            }
+        case .notInstalled, .installingAssets, .unsupported:
+            HStack(spacing: 8) {
+                Text(L("settings.skipSilence.model.missing", vad.sizeText))
+                    .appFont(.caption)
+                    .foregroundStyle(model.skipsLongSilence ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L("model.download")) { model.downloadConfirmation = vad }
+                    .controlSize(.small)
+            }
+        }
     }
 }
 

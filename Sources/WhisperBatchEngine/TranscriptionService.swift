@@ -15,6 +15,8 @@ public final class TranscriptionService {
     public typealias TranscriberLoading = @MainActor (SpeechModel, LanguageOption) async throws -> any Transcriber
     /// ファイルの長さと種類を調べる
     public typealias MediaInspecting = @Sendable (URL) async throws -> MediaInfo
+    /// 長い無音を飛ばすときの発話区間の検出（Silero VAD）を読み込む
+    public typealias VoiceActivityLoading = @MainActor () async throws -> any SpeechRegionDetecting
 
     public private(set) var queue = TranscriptionQueue()
     public private(set) var isRunning = false
@@ -22,6 +24,7 @@ public final class TranscriptionService {
 
     @ObservationIgnored private let loadTranscriber: TranscriberLoading
     @ObservationIgnored private let inspectMedia: MediaInspecting
+    @ObservationIgnored private let loadVoiceActivity: VoiceActivityLoading
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var probeQueue: [UUID] = []
     @ObservationIgnored private var probeTask: Task<Void, Never>?
@@ -31,15 +34,24 @@ public final class TranscriptionService {
     @ObservationIgnored public var onTranscriptInputChanged: ((Set<UUID>) -> Void)?
 
     public init(loadTranscriber: @escaping TranscriberLoading,
-                inspectMedia: @escaping MediaInspecting = { try await MediaInspector.inspect($0) }) {
+                inspectMedia: @escaping MediaInspecting = { try await MediaInspector.inspect($0) },
+                loadVoiceActivity: @escaping VoiceActivityLoading = {
+                    throw WhisperBatchError.modelNotInstalled(modelName: ModelCatalog.voiceActivity.displayName)
+                }) {
         self.loadTranscriber = loadTranscriber
         self.inspectMedia = inspectMedia
+        self.loadVoiceActivity = loadVoiceActivity
     }
 
     /// アプリで使う構成（モデルは `storage` から読み込む。`ai` は Vantage の AI の実装で、Air では nil）
     public convenience init(storage: ModelStorage?, ai: (any AIRuntime)? = nil) {
         self.init(loadTranscriber: { model, language in
             try await TranscriberLoader.load(model, storage: storage, language: language, ai: ai)
+        }, loadVoiceActivity: {
+            guard let storage else {
+                throw WhisperBatchError.modelNotInstalled(modelName: ModelCatalog.voiceActivity.displayName)
+            }
+            return try await VoiceActivityLoader.load(storage: storage)
         })
     }
 
@@ -125,14 +137,20 @@ public final class TranscriptionService {
 
     /// 待機中の項目を順に文字起こしする。終わったとき（中止を含む）に結果を `onFinish` へ渡す。
     /// 何も処理しなかった場合の結果は nil。既に処理中なら何もしない。
-    /// - Parameter decoding: Whisper の探索方式（ほかの方式では使わない）
+    /// - Parameters:
+    ///   - decoding: Whisper の探索方式（ほかの方式では使わない）
+    ///   - skipsSilence: 長い無音を飛ばす（Silero VAD。Whisper だけ）。モデルがない・読み込めないときは
+    ///     飛ばさずに（従来どおり）文字起こしし、理由を `onNotice` に渡す。
     public func start(model: SpeechModel, language: LanguageOption, decoding: WhisperDecoding = .default,
-                      onFinish: @escaping @MainActor (BatchOutcome?) -> Void = { _ in }) {
+                      skipsSilence: Bool = false,
+                      onFinish: @escaping @MainActor (BatchOutcome?) -> Void = { _ in },
+                      onNotice: @escaping @MainActor (String) -> Void = { _ in }) {
         guard !isRunning else { return }
         isRunning = true
         let options = TranscriptionOptions(language: language, decoding: decoding)
+        let usesVoiceActivity = skipsSilence && model.engine == .whisper
         runTask = Task {
-            let outcome = await runBatch(model: model, options: options)
+            let outcome = await runBatch(model: model, options: options, usesVoiceActivity: usesVoiceActivity, onNotice: onNotice)
             onFinish(outcome)
             isRunning = false
             isLoadingModel = false
@@ -149,13 +167,26 @@ public final class TranscriptionService {
         await runTask?.value
     }
 
-    private func runBatch(model: SpeechModel, options: TranscriptionOptions) async -> BatchOutcome? {
+    private func runBatch(model: SpeechModel, options: TranscriptionOptions, usesVoiceActivity: Bool,
+                          onNotice: @MainActor (String) -> Void) async -> BatchOutcome? {
         isLoadingModel = true
         let context: any Transcriber
         do {
             context = try await loadTranscriber(model, options.language)
         } catch {
             return .couldNotStart(ItemFailure(error))
+        }
+        var options = options
+        if usesVoiceActivity {
+            do {
+                options.voiceActivity = try await loadVoiceActivity()
+            } catch is CancellationError {
+                isLoadingModel = false
+                return .cancelled(succeeded: 0, failed: 0, remaining: queue.counts.pending)
+            } catch {
+                // 無音を飛ばせないだけなので、止めずに従来どおり文字起こしする
+                onNotice(L("vad.unavailable", ItemFailure(error).message))
+            }
         }
         isLoadingModel = false
 

@@ -23,5 +23,6 @@ enum TestLocalization {
         "editor.mode.text", "editor.mode.segments",
         // 話者識別のモデル（ModelCatalog.auxiliary）
         "model.speaker-diarization.name", "model.speaker-diarization.summary",
+        "model.silero-vad.name", "model.silero-vad.summary",
     ]
 }

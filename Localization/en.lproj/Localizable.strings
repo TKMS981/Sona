@@ -439,6 +439,12 @@
 "settings.background.standard" = "Standard";
 "settings.decoding" = "Whisper decoding:";
 "settings.decoding.note" = "Applies only to Whisper. Speed priority is somewhat faster than accuracy priority, but may make more wording mistakes and produce longer subtitle (SRT/VTT) segments. Changes made while processing take effect from the next start.";
+"settings.skipSilence" = "Long silences:";
+"settings.skipSilence.toggle" = "Skip long silences (Silero VAD)";
+"settings.skipSilence.note" = "Applies only when transcribing files with Whisper (not to live transcription). Finds the parts without speech, shortens silences longer than 5 seconds to 1 second before recognition, and maps the times back to the original audio (0.5 seconds before and after speech are always kept). For recordings with many long silences, this reduces text made up from silence and speeds things up. For recordings with few silences it is slightly slower, and very short interjections in noise may be left out. Changes made while processing take effect from the next start.";
+"settings.skipSilence.model.installed" = "Model: downloaded (%@)";
+"settings.skipSilence.model.missing" = "The model (%@) has not been downloaded yet. Until it is, transcription runs without skipping silences.";
+"settings.skipSilence.model.downloading" = "Downloading the model…";
 "settings.engine" = "Engine";
 "settings.engine.accessibility" = "Transcription engine";
 "settings.font.family" = "Typeface:";
@@ -635,6 +641,10 @@
 "model.speaker-diarization.name" = "Speaker identification (pyannote + 3D-Speaker)";
 "model.speaker-diarization.summary" = "Model for adding speakers to transcripts. Runs on this Mac.";
 "models.auxiliary.section" = "Speaker identification";
+"model.silero-vad.name" = "Silence detection (Silero VAD v6.2.0)";
+"model.silero-vad.summary" = "Model for skipping long silences with Whisper (MIT License). Runs on this Mac.";
+"models.voiceActivity.section" = "Skip long silences";
+"vad.unavailable" = "Long silences could not be skipped, so the whole audio, silences included, will be transcribed (%@).";
 "notify.batch.title" = "Transcription finished";
 "notify.download.done" = "%@ downloaded";
 "notify.download.doneBody" = "It's ready to use.";

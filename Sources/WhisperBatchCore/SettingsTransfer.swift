@@ -40,6 +40,7 @@ public struct SettingsSnapshot: Codable, Equatable, Sendable {
         public var appLanguage: String?
         public var autoStartOnAdd: Bool?
         public var whisperDecoding: String?
+        public var skipsLongSilence: Bool?
         public init() {}
     }
 
@@ -154,6 +155,7 @@ extension SettingsStore {
         general.appLanguage = languagePreference.rawValue
         general.autoStartOnAdd = autoStartOnAdd
         general.whisperDecoding = whisperDecoding.rawValue
+        general.skipsLongSilence = skipsLongSilence
         s.general = general
 
         var live = SettingsSnapshot.Live()
@@ -219,6 +221,7 @@ extension SettingsStore {
                 whisperDecoding = d
                 return true
             }
+            report.apply(g.skipsLongSilence, key: "general.skipsLongSilence") { skipsLongSilence = $0; return true }
         }
         if let l = snapshot.live {
             report.apply(l.modelID, key: "live.modelID") { value in

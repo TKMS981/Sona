@@ -53,6 +53,12 @@ final class AppModel {
         set { settings.whisperDecoding = newValue }
     }
 
+    /// バッチ文字起こし（Whisper）で長い無音を飛ばす（Silero VAD。既定はオフ）
+    var skipsLongSilence: Bool {
+        get { settings.skipsLongSilence }
+        set { settings.skipsLongSilence = newValue }
+    }
+
     /// 現在の表示言語（画面はこの値の変化で作り直す）
     private(set) var appLanguage: AppLanguage
 
@@ -339,13 +345,19 @@ final class AppModel {
         guard canStart else { return }
         lastOutcome = nil
         lastSaveMessage = nil
-        transcription.start(model: selectedModel, language: effectiveLanguage, decoding: whisperDecoding) { [weak self] outcome in
-            guard let self, let outcome else { return }
-            lastOutcome = outcome
-            if settings.notifyBatchFinished {
-                NotificationService.shared.post(title: L("notify.batch.title"), body: outcome.message, settings: settings)
-            }
-        }
+        transcription.start(model: selectedModel, language: effectiveLanguage, decoding: whisperDecoding,
+                            skipsSilence: skipsLongSilence,
+                            onFinish: { [weak self] outcome in
+                                guard let self, let outcome else { return }
+                                lastOutcome = outcome
+                                if settings.notifyBatchFinished {
+                                    NotificationService.shared.post(title: L("notify.batch.title"), body: outcome.message, settings: settings)
+                                }
+                            },
+                            onNotice: { [weak self] notice in
+                                guard let self else { return }
+                                addNotice = addNotice.map { $0 + "\n" + notice } ?? notice
+                            })
     }
 
     func cancel() {

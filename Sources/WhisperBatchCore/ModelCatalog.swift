@@ -93,6 +93,8 @@ public enum ModelPurpose: String, Sendable {
     case speakerDiarization
     /// ローカルの言語モデル（AI の修正・整形・要約・翻訳。llama.cpp で動かす。`LocalLLMCatalog`）
     case textGeneration
+    /// 発話区間の検出（バッチ文字起こしで長い無音を飛ばす。whisper.framework の Silero VAD で動かす）
+    case voiceActivity
 }
 
 /// 文字起こしモデル（と、話者識別などの補助のモデル）
@@ -207,8 +209,17 @@ public enum ModelCatalog {
                   sizeBytes: 28_281_164, sha256: "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2"),
     ], folder: "speaker-diarization", purpose: .speakerDiarization)
 
+    /// 発話区間の検出（Silero VAD v6.2.0、MIT、Silero Team）を whisper.cpp 用（ggml 形式）に変換したもの。
+    /// 取得元は whisper.cpp の公式（ggml-org/whisper-vad、ライセンス MIT）。コミットを固定して取得する。
+    /// サイズと SHA-256 はそのコミットの LFS メタデータの値（取得して一致を確認、2026-11）。
+    /// Whisper（whisper.framework）で動かすので、Air と Vantage の両方で使える。
+    public static let voiceActivity = SpeechModel(id: "silero-vad", engine: .whisper, files: [
+        hfFile("ggml-org/whisper-vad", "9ffd54a1e1ee413ddf265af9913beaf518d1639b", "ggml-silero-v6.2.0.bin", 885_098,
+               "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"),
+    ], folder: "silero-vad", purpose: .voiceActivity)
+
     /// 文字起こし以外の、ダウンロードして使うモデル
-    public static let auxiliary: [SpeechModel] = [speakerDiarization]
+    public static let auxiliary: [SpeechModel] = [speakerDiarization, voiceActivity]
 
     /// 音声を直接読む言語モデル（llama.cpp のマルチモーダルで動かす。Vantage だけ）。
     /// どちらもモデル本体の GGUF と音声エンコーダー（mmproj）の GGUF の 2 つで、1 つめが本体・2 つめがエンコーダー。

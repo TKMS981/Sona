@@ -439,6 +439,12 @@
 "settings.background.standard" = "標準";
 "settings.decoding" = "Whisper の認識:";
 "settings.decoding.note" = "Whisper を使うときだけの設定です。速度優先は精度優先より少し速く処理しますが、言い回しの誤りが増えたり、字幕（SRT・VTT）の 1 区間が長くなったりすることがあります。処理中に変えた場合は、次の開始から反映します。";
+"settings.skipSilence" = "長い無音:";
+"settings.skipSilence.toggle" = "長い無音を飛ばす（Silero VAD）";
+"settings.skipSilence.note" = "Whisper でファイルを文字起こしするときだけの設定です（ライブ文字起こしには使いません）。発話のない部分を見つけ、5 秒より長い無音を 1 秒に短くしてから認識し、時刻は元の音声に合わせて戻します（発話の前後 0.5 秒は必ず残します）。長い無音の多い録音で、無音から文章を作る誤認識が減り、速くなります。無音の少ない録音では少し遅くなり、雑音の中のごく短い相づちが文字起こしされないことがあります。処理中に変えた場合は、次の開始から反映します。";
+"settings.skipSilence.model.installed" = "モデル: 取得済み（%@）";
+"settings.skipSilence.model.missing" = "モデル（%@）をまだ取得していません。取得するまでは無音を飛ばさずに文字起こしします。";
+"settings.skipSilence.model.downloading" = "モデルを取得中…";
 "settings.engine" = "方式";
 "settings.engine.accessibility" = "文字起こしの方式";
 "settings.font.family" = "書体:";
@@ -635,6 +641,10 @@
 "model.speaker-diarization.name" = "話者識別（pyannote + 3D-Speaker）";
 "model.speaker-diarization.summary" = "文字起こしの結果に話者を付けるためのモデル。この Mac の中で動きます。";
 "models.auxiliary.section" = "話者識別";
+"model.silero-vad.name" = "無音の検出（Silero VAD v6.2.0）";
+"model.silero-vad.summary" = "Whisper で長い無音を飛ばすためのモデル（MIT ライセンス）。この Mac の中で動きます。";
+"models.voiceActivity.section" = "無音を飛ばす";
+"vad.unavailable" = "無音を飛ばす機能を使えなかったため、無音も含めて文字起こしします（%@）。";
 "notify.batch.title" = "文字起こしが終わりました";
 "notify.download.done" = "%@ を取得しました";
 "notify.download.doneBody" = "使える状態になりました。";

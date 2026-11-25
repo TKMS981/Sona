@@ -62,6 +62,12 @@ public final class SettingsStore {
         didSet { defaults.set(whisperDecoding.rawValue, forKey: Keys.whisperDecoding) }
     }
 
+    /// バッチ文字起こし（Whisper）で長い無音を飛ばす（Silero VAD）。既定はオフ。
+    /// 利用者が有効にしたときだけ使う。ライブ文字起こしには使わない。
+    public var skipsLongSilence: Bool {
+        didSet { defaults.set(skipsLongSilence, forKey: Keys.skipsLongSilence) }
+    }
+
     /// ゴーストモード: ライブ文字起こし中に、このアプリ自身の録音表示（メニューバーの表示）を出さず、
     /// ウインドウを隠せるようにする。既定はオフ。利用者が説明を読んで有効にしたときだけオンになる。
     /// OS が表示する収録中の表示やプライバシーの表示には影響しない。
@@ -188,6 +194,7 @@ public final class SettingsStore {
         static let appLanguage = "appLanguage"
         static let autoStartOnAdd = "autoStartOnAdd"
         static let whisperDecoding = "whisperDecoding"
+        static let skipsLongSilence = "whisper.skipsLongSilence"
         static let ghostMode = "ghostMode"
         static let liveStopShortcut = "liveStopShortcut"
         static let liveShowShortcut = "liveShowShortcut"
@@ -218,6 +225,7 @@ public final class SettingsStore {
         languagePreference = defaults.string(forKey: Keys.appLanguage).flatMap(LanguagePreference.init(rawValue:)) ?? .system
         autoStartOnAdd = defaults.bool(forKey: Keys.autoStartOnAdd)
         whisperDecoding = defaults.string(forKey: Keys.whisperDecoding).flatMap(WhisperDecoding.init(rawValue:)) ?? .default
+        skipsLongSilence = defaults.bool(forKey: Keys.skipsLongSilence)
         ghostMode = defaults.bool(forKey: Keys.ghostMode)
         liveStopShortcut = defaults.string(forKey: Keys.liveStopShortcut).flatMap(LiveShortcut.init(rawValue:))
             .flatMap { LiveShortcut.stopChoices.contains($0) ? $0 : nil } ?? LiveShortcut.defaultStop

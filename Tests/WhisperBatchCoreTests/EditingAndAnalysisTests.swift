@@ -494,6 +494,7 @@ struct SettingsTransferTests {
         a.language = .english
         a.autoStartOnAdd = true
         a.whisperDecoding = .greedy
+        a.skipsLongSilence = true
         a.liveVocabularyHint = "Sona, whisper.cpp"
         a.notifyBatchFinished = true
         a.notificationSound = true
@@ -513,6 +514,7 @@ struct SettingsTransferTests {
         #expect(report.skipped.isEmpty)
         #expect(report.applied > 15)
         #expect(b.language == .english && b.autoStartOnAdd && b.whisperDecoding == .greedy)
+        #expect(b.skipsLongSilence)
         #expect(b.liveVocabularyHint == "Sona, whisper.cpp")
         #expect(b.notifyBatchFinished && b.notificationSound && !b.notifyDownloads && b.notifyOnlyWhenInactive)
         #expect(b.reviewThreshold == .loose && b.extraFillers == "なるほど" && !b.showsConfidence)
