@@ -72,9 +72,10 @@ struct LiveTranscriptionView: View {
 /// テーマの背景があるときは透かし、なければ標準の背景
 private struct LivePanelBackground: ViewModifier {
     @Environment(AppModel.self) private var model
+    @Environment(\.hasCustomBackground) private var hasCustomBackground
 
     func body(content: Content) -> some View {
-        if model.appearance.hasCustomBackground {
+        if hasCustomBackground {
             content.background { ThemeBackground(settings: model.appearance).ignoresSafeArea() }
         } else {
             content.background(.background)
@@ -296,7 +297,7 @@ private struct LiveSetupForm: View {
                     if !model.models.isInstalled(live.model) {
                         HStack(spacing: 8) {
                             Label(L("live.model.notInstalled"), systemImage: "arrow.down.circle")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.warningText)
                                 .appFont(.callout)
                             Button(L("model.download")) { showDownloadConfirmation = true }
                                 .controlSize(.small)
@@ -322,7 +323,7 @@ private struct LiveSetupForm: View {
             if let error = live.session.startError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .appFont(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.errorText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -498,7 +499,7 @@ private struct LiveConfirmationSheet: View {
                     if selection.screenInput == .window, let app = live.windowChoice?.detail {
                         Label(L("live.confirm.windowApp", app), systemImage: "exclamationmark.circle")
                             .appFont(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.warningText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -546,7 +547,7 @@ private struct LiveConfirmationSheet: View {
             if live.hasUnsavedResult {
                 Label(L("live.confirm.unsaved"), systemImage: "exclamationmark.triangle")
                     .appFont(.callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warningText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -600,7 +601,7 @@ private struct LiveSessionBody: View {
                     provisional: session.transcript.provisionalText,
                     showTimestamps: showTimestamps,
                     font: typography.nsFont(size: NSFont.systemFontSize + 2),
-                    showsBackground: !model.appearance.hasCustomBackground
+                    showsBackground: !hasCustomBackground
                 )
                 if session.transcript.isEmpty {
                     Text(session.state == .running ? L("live.waiting") : L("live.noText"))
@@ -696,9 +697,9 @@ private struct LiveQualityStrip: View {
     private func color(_ status: LiveQualityMeter.Status) -> Color {
         switch status {
         case .measuring: .secondary
-        case .good: .green
-        case .delayed: .orange
-        case .behind: .red
+        case .good: .successText
+        case .delayed: .warningText
+        case .behind: .errorText
         }
     }
 }
@@ -723,7 +724,7 @@ private struct LiveInputsStrip: View {
                     if input.isActive, input.kind == .window, !input.isVisible {
                         Text(L("live.input.notVisible"))
                             .appFont(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.warningText)
                     }
                     Text(input.isActive ? L("live.input.active") : L("live.input.inactive"))
                         .appFont(.caption)
@@ -784,7 +785,7 @@ private struct LiveFooter: View {
             if session.droppedSeconds > 0 {
                 Label(L("live.dropped.total", Int(session.droppedSeconds.rounded(.up))), systemImage: "exclamationmark.triangle")
                     .appFont(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warningText)
             }
             HStack(spacing: 10) {
                 Label(session.isRecordingAudio ? L("live.footer.recording") : L("settings.privacy"),
@@ -848,8 +849,8 @@ private struct LiveFooter: View {
     private func color(_ level: LiveTranscriptionSession.Notice.Level) -> Color {
         switch level {
         case .info: .secondary
-        case .warning: .orange
-        case .error: .red
+        case .warning: .warningText
+        case .error: .errorText
         }
     }
 }
@@ -954,6 +955,6 @@ struct LiveTranscriptTextView: NSViewRepresentable {
 
     private var markerAttributes: [NSAttributedString.Key: Any] {
         [.font: NSFont.systemFont(ofSize: max(font.pointSize - 3, 10), weight: .semibold),
-         .foregroundColor: NSColor.tertiaryLabelColor, .paragraphStyle: paragraph]
+         .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: paragraph]
     }
 }

@@ -145,7 +145,7 @@ private struct SkipSilenceModelStatus: View {
             Text(L("models.state.verifyingShort")).appFont(.caption).foregroundStyle(.secondary)
         case .failed(let message, let canResume):
             VStack(alignment: .leading, spacing: 4) {
-                Text(message).appFont(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                Text(message).appFont(.caption).foregroundStyle(.errorText).fixedSize(horizontal: false, vertical: true)
                 Button(canResume ? L("model.resume") : L("model.retry")) { model.models.download(vad) }
                     .controlSize(.small)
             }
@@ -153,7 +153,7 @@ private struct SkipSilenceModelStatus: View {
             HStack(spacing: 8) {
                 Text(L("settings.skipSilence.model.missing", vad.sizeText))
                     .appFont(.caption)
-                    .foregroundStyle(model.skipsLongSilence ? .orange : .secondary)
+                    .foregroundStyle(model.skipsLongSilence ? .warningText : .secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(L("model.download")) { model.downloadConfirmation = vad }
                     .controlSize(.small)
@@ -254,7 +254,7 @@ private struct NotificationSettingsTab: View {
                     case .denied:
                         HStack(spacing: 8) {
                             Label(L("settings.notify.denied"), systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.warningText)
                                 .appFont(.caption)
                             Button(L("settings.notify.openSettings")) { notifications.openSystemSettings() }
                                 .controlSize(.small)
@@ -338,7 +338,7 @@ private struct LiveSettingsTab: View {
                 if !live.failedShortcuts.isEmpty {
                     Label(L("settings.live.shortcut.failed"), systemImage: "exclamationmark.triangle")
                         .appFont(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.warningText)
                 }
             }
         }

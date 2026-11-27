@@ -135,7 +135,7 @@ private struct LiveToolbarButton: View {
                             TranscriptFormatter.clock(live.session.elapsed(at: date))),
                           systemImage: live.state == .paused ? "pause.circle.fill" : "record.circle")
                 }
-                .foregroundStyle(live.state == .paused ? .orange : .red)
+                .foregroundStyle(live.state == .paused ? .warningText : .errorText)
             } else {
                 Label(L("toolbar.live"), systemImage: "waveform.badge.mic")
             }

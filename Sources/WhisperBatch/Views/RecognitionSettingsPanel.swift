@@ -140,14 +140,14 @@ private struct ModelStatusLine: View {
                     Text(L("model.loading")).appFont(.callout)
                 } else {
                     Label(L("model.state.installed"), systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.successText)
                         .appFont(.callout)
                     Text(m.summary).appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             case .notInstalled:
                 Label(m.isDownloadable ? L("model.state.notInstalled") : L("model.state.noAssets", model.effectiveLanguage.displayName),
                       systemImage: "arrow.down.circle")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warningText)
                     .appFont(.callout)
                 if m.isDownloadable {
                     Text(L("model.sizeAndSpace", m.sizeText, m.requiredSpaceText))
@@ -166,7 +166,7 @@ private struct ModelStatusLine: View {
                     .controlSize(.small)
             case .unsupported:
                 Label(L("model.state.unsupported", model.effectiveLanguage.displayName), systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warningText)
                     .appFont(.callout)
                     .lineLimit(2)
             case .downloading(let received, let total):
@@ -184,7 +184,7 @@ private struct ModelStatusLine: View {
                 Text(L("model.verifying")).appFont(.callout)
             case .failed(let message, let canResume):
                 Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.errorText)
                     .appFont(.callout)
                     .lineLimit(2)
                 Button(canResume ? L("model.resume") : L("model.retry")) { model.models.download(m) }

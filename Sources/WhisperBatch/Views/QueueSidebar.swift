@@ -74,12 +74,12 @@ private struct EmptyQueueView: View {
             if model.isAddingFiles { ProgressView().controlSize(.small) }
             Text(L("queue.empty.formats", AudioFormats.summary))
                 .appFont(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             if let notice = model.addNotice {
                 Text(notice)
                     .appFont(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.warningText)
                     .multilineTextAlignment(.center)
             }
             Spacer(minLength: 0)
@@ -231,7 +231,7 @@ struct QueueRow: View {
     }
 
     private var subtitleColor: Color {
-        if case .failed = item.status { return .red }
+        if case .failed = item.status { return .errorText }
         return .secondary
     }
 

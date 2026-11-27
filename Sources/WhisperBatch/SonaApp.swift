@@ -29,7 +29,8 @@ public struct SonaApp: App {
         Window(L("live.window.title"), id: "live") {
             LiveTranscriptionView()
                 .modifier(MotionProvider())
-                .modifier(AppearanceProvider(settings: appDelegate.model.appearance))
+                // テーマの背景を描くので、メインウインドウと同じく背景色の明るさに合わせた文字の色にする
+                .modifier(AppearanceProvider(settings: appDelegate.model.appearance, appliesBackground: true))
                 .environment(appDelegate.model)
                 .id(appDelegate.model.appLanguage)
                 .environment(\.locale, appDelegate.model.appLanguage.locale)

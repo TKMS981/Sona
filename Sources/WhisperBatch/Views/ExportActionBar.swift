@@ -123,9 +123,9 @@ struct ExportActionBar: View {
 
     private func color(_ s: BatchOutcome.Severity) -> Color {
         switch s {
-        case .success: .green
-        case .warning: .orange
-        case .failure: .red
+        case .success: .successText
+        case .warning: .warningText
+        case .failure: .errorText
         case .neutral: .secondary
         }
     }

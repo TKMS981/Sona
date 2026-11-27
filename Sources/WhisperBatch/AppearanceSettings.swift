@@ -370,14 +370,19 @@ extension View {
 
 /// 書体・ライト／ダークの設定を画面全体に渡す（メインウィンドウと設定画面の両方で使う）
 struct AppearanceProvider: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
     let settings: AppearanceSettings
     var appliesBackground = false
 
     func body(content: Content) -> some View {
         let typography = settings.typography
+        // 「透明度を下げる」「コントラストを上げる」が有効なときは、テーマの背景はウィンドウの余白にだけ見せ、
+        // パネルや本文は不透明な標準の背景にする（文字の下に色や画像を透かさない）
+        let keepsSurfacesOpaque = reduceTransparency || contrast == .increased
         content
             .environment(\.appTypography, typography)
-            .environment(\.hasCustomBackground, appliesBackground && settings.hasCustomBackground)
+            .environment(\.hasCustomBackground, appliesBackground && settings.hasCustomBackground && !keepsSurfacesOpaque)
             // 文字の種類を指定していない文字にも、選んだ書体を使う
             .font(typography.isStandard ? nil : typography.font(.body))
             .preferredColorScheme(appliesBackground ? settings.effectiveColorScheme : settings.appearanceMode.colorScheme)
