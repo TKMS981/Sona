@@ -168,14 +168,18 @@ final class AppModel {
 
     @ObservationIgnored private var mp3ExportTasks: [UUID: Task<Void, Never>] = [:]
 
-    init(settings: SettingsStore = SettingsStore()) {
+    /// 起動したエディションと AI の実装（Air では `DisabledAIRuntime`）。起動時に受け取り、以降は変わらない。
+    let runtime: AppRuntime
+
+    init(runtime: AppRuntime, settings: SettingsStore = SettingsStore()) {
         let models = ModelManager()
+        self.runtime = runtime
         self.settings = settings
         self.models = models
         // Qwen3-ASR・Granite は Vantage の AI の実装（llama.cpp）で動かす
-        transcription = TranscriptionService(storage: models.storage, ai: SonaRuntime.ai)
+        transcription = TranscriptionService(storage: models.storage, ai: runtime.ai)
         // AI の実装がないのに、それが必要な方式が保存されていたら（Vantage の設定を Air で開いたなど）、既定の方式に戻す
-        if settings.selectedModel.engine.requiresAIRuntime, SonaRuntime.ai == nil {
+        if settings.selectedModel.engine.requiresAIRuntime, !runtime.providesAI {
             settings.selectedModelID = ModelCatalog.defaultModelID
         }
         live = LiveController(settings: settings, models: models)
@@ -370,7 +374,7 @@ final class AppModel {
         transcription.cancel()
         speakerTasks.values.forEach { $0.cancel() }
         for task in speakerTasks.values { await task.value }
-        await SonaRuntime.ai?.shutdownTextModel()
+        await runtime.ai.shutdownTextModel()
         await live.shutdown()
         mp3ExportTasks.values.forEach { $0.cancel() }
         await transcription.waitUntilFinished()

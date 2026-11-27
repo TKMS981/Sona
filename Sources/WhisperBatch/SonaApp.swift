@@ -11,7 +11,7 @@ public struct SonaApp: App {
     public init() {}
 
     public var body: some Scene {
-        Window(SonaRuntime.edition.productName, id: "main") {
+        Window(appDelegate.model.edition.productName, id: "main") {
             ContentView()
                 .modifier(MotionProvider())
                 .modifier(AppearanceProvider(settings: appDelegate.model.appearance, appliesBackground: true))
@@ -57,7 +57,7 @@ public struct SonaApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    @MainActor let model = AppModel()
+    @MainActor let model = AppModel(runtime: SonaRuntime.current)
 
 
     /// ライブ文字起こしが続いている・保存していない結果があるときは、ウインドウを閉じても終了しない

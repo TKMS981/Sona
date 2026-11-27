@@ -64,7 +64,8 @@ extension AppModel {
     /// 話者を識別する（この Mac の中で処理する。モデルが必要）
     func identifySpeakers(_ id: UUID, speakerCount: Int?) {
         guard speakerTasks[id] == nil, let item = queue.item(id), item.status == .completed, let storage = models.storage,
-              let ai = SonaRuntime.ai, has(.speakerIdentification) else { return }
+              has(.speakerIdentification) else { return }
+        let ai = runtime.ai
         speakerJobs[id] = SpeakerJob(phase: .reading, progress: 0)
         // 進捗の表示の更新は段階ごとに間引く（処理そのものは変えない）
         let gates: [SpeakerIdentificationPhase: ProgressGate] = [.converting: ProgressGate(), .reading: ProgressGate(),

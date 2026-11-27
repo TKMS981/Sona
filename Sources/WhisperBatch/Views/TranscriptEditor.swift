@@ -227,12 +227,13 @@ private struct SpeakerJobBanner: View {
 
 /// 区間の一覧の絞り込み（話者・要確認・削除した区間）
 private struct SegmentFilterBar: View {
+    @Environment(AppModel.self) private var model
     let original: Transcript
     let names: [Int: String]
     @Binding var speakerFilter: Int?
     @Binding var reviewOnly: Bool
     /// 誤認識の候補を使えるエディション（Vantage）
-    var showsReview: Bool { SonaRuntime.features.contains(.reviewCandidates) }
+    var showsReview: Bool { model.has(.reviewCandidates) }
     @Binding var showDeleted: Bool
     let reviewCount: Int
     let deletedCount: Int

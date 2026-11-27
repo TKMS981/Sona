@@ -49,7 +49,7 @@ struct RecognitionSettingsPanel: View {
     private var enginePicker: some View {
         HStack(spacing: 8) {
             Picker(L("settings.engine"), selection: Binding(get: { model.selectedEngine }, set: { model.selectEngine($0) })) {
-                ForEach(SpeechEngine.available(hasAIRuntime: SonaRuntime.ai != nil)) { engine in
+                ForEach(model.availableEngines) { engine in
                     Text(engine.displayName).tag(engine)
                 }
             }
