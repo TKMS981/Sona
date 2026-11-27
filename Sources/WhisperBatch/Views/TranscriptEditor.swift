@@ -24,7 +24,11 @@ enum TranscriptViewMode: String, CaseIterable, Identifiable {
 }
 
 /// 完了した項目の結果（表示と編集）
-struct CompletedTranscriptView: View {
+///
+/// 全文の装飾付きテキストや要確認の候補を body で作るため、区間が多いと 1 回の評価が重い（3000 区間で約 30ms）。
+/// 一括処理の進捗などで親が描き直されても、項目・原文・時刻表示が同じなら評価し直さないよう、
+/// 呼び出し側で `.equatable()` を付ける。この View が自分で読む値（設定など）の変化は、これまでどおり Observation で届く。
+struct CompletedTranscriptView: View, Equatable {
     @Environment(AppModel.self) private var model
     @Environment(\.appTypography) private var typography
     @Environment(\.hasCustomBackground) private var hasCustomBackground
@@ -38,6 +42,10 @@ struct CompletedTranscriptView: View {
 
     private var mode: TranscriptViewMode { TranscriptViewMode(rawValue: modeRaw) ?? .text }
 
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item && lhs.original == rhs.original && lhs.showTimestamps == rhs.showTimestamps
+    }
+
     var body: some View {
         let annotations = item.annotations
         // 誤認識の候補（要確認）は Vantage だけ
@@ -49,9 +57,7 @@ struct CompletedTranscriptView: View {
                           reviewCount: candidates.count)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-            if let job = model.speakerJobs[item.id] {
-                SpeakerJobBanner(itemID: item.id, job: job)
-            }
+            SpeakerJobBannerSlot(itemID: item.id)
             Divider()
             switch mode {
             case .text:
@@ -177,6 +183,18 @@ private struct EditorToolbar: View {
     }
 }
 
+/// 話者識別の進み具合は、この View だけが読む（進み具合が変わるたびに結果全体を評価し直さないため）
+private struct SpeakerJobBannerSlot: View {
+    @Environment(AppModel.self) private var model
+    let itemID: UUID
+
+    var body: some View {
+        if let job = model.speakerJobs[itemID] {
+            SpeakerJobBanner(itemID: itemID, job: job)
+        }
+    }
+}
+
 /// 話者識別の進み具合
 private struct SpeakerJobBanner: View {
     @Environment(AppModel.self) private var model
@@ -296,8 +314,10 @@ private struct SegmentList: View {
 
     /// AI の修正案に渡す前後の文
     private func context(around i: Int, edits: TranscriptEdits) -> (before: [String], after: [String]) {
-        let before = original.segments.indices.filter { $0 < i }.suffix(2).compactMap { edits.text(at: $0, in: original) }
-        let after = original.segments.indices.filter { $0 > i }.prefix(2).compactMap { edits.text(at: $0, in: original) }
+        // 見えている行ごとに呼ばれるので、全区間をなめずに前後 2 区間だけを見る（削除した区間は含めない）
+        let segments = original.segments
+        let before = (max(segments.startIndex, i - 2) ..< i).compactMap { edits.text(at: $0, in: original) }
+        let after = (i + 1 ..< min(segments.endIndex, i + 3)).compactMap { edits.text(at: $0, in: original) }
         return (before, after)
     }
 }

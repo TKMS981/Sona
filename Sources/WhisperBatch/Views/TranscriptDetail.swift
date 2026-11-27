@@ -180,6 +180,7 @@ private struct ItemDetail: View {
         case .completed:
             if let transcript = item.transcript, !transcript.isEmpty {
                 CompletedTranscriptView(item: item, original: transcript, showTimestamps: showTimestamps)
+                    .equatable()
             } else {
                 ContentUnavailableView {
                     Label(L("detail.noSpeech.title"), systemImage: "speaker.slash")
