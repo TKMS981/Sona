@@ -19,6 +19,8 @@
 #
 # アプリに com.apple.security.cs.disable-library-validation が付いている場合は、同じコマンドで
 # WB_DISABLE_LIBRARY_VALIDATION=1 を明示していなければ中止する（--no-build で別のビルドを使った場合も含む）。
+# ただし、WB_SIGN_IDENTITY を指定しないアドホック署名の DMG で、アプリがアドホック署名・Hardened Runtime ありの
+# ときは中止しない（build-app.sh がアドホック署名では必ず付けるため）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -66,7 +68,15 @@ fi
 [[ -d "$app" ]] || { echo "アプリが見つかりません: $app" >&2; exit 1; }
 codesign --verify --strict --deep "$app"
 app_entitlements="$(codesign --display --entitlements - --xml "$app" 2>/dev/null)"
+app_signature="$(codesign --display --verbose=2 "$app" 2>&1)"
+# アドホック署名のアプリは、Hardened Runtime と一緒にライブラリの例外を必ず付けている（build-app.sh）。
+# 例外を黙って認めるのはこの組み合わせ（証明書の指定なし・アドホック署名・Hardened Runtime あり）だけ
+adhoc_with_runtime=0
+if [[ -z "$identity" && "$app_signature" == *"Signature=adhoc"* && "$app_signature" == *"flags="*"runtime"* ]]; then
+  adhoc_with_runtime=1
+fi
 if [[ "$app_entitlements" == *com.apple.security.cs.disable-library-validation* \
+      && "$adhoc_with_runtime" != "1" \
       && "${WB_DISABLE_LIBRARY_VALIDATION:-0}" != "1" ]]; then
   echo "アプリにライブラリ検証の例外（disable-library-validation）が付いています。通常の配布では使いません。" >&2
   echo "意図して配布する場合だけ、WB_DISABLE_LIBRARY_VALIDATION=1 を明示してください。" >&2

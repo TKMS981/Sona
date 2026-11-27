@@ -122,7 +122,7 @@ WB_NOTARY_PROFILE=sona \
 | --- | --- | --- |
 | `WB_SIGN_IDENTITY` | `build-app.sh`、`make-dmg.sh` | 署名に使う証明書の名前（`security find-identity -v -p codesigning` で表示されるもの、またはその SHA-1）。指定すると、同梱ライブラリとアプリをこの証明書で署名し、**Hardened Runtime**（`--options runtime`）と署名時刻（`--timestamp`）を付けます。DMG にも署名します |
 | `WB_NOTARY_PROFILE` | `make-dmg.sh` | `notarytool` のキーチェーンプロファイル名。指定すると、アプリと DMG をそれぞれ公証し（`notarytool submit --wait`）、チケットを添付（`stapler staple`）してから SHA-256 を計算します。`WB_SIGN_IDENTITY` が必要です |
-| `WB_DISABLE_LIBRARY_VALIDATION=1` | `build-app.sh`、`make-dmg.sh` | **通常の配布では使いません。** Developer ID 署名のときに `com.apple.security.cs.disable-library-validation` を付けます（下記「Hardened Runtime での動作」参照）。既定では付けません。`WB_SIGN_IDENTITY` なしで指定するとエラーにします。署名後に、この例外が指定したときだけ付いていることを確かめます。`make-dmg.sh` は、例外の付いたアプリを、同じコマンドでこの変数を明示していなければ DMG にしません |
+| `WB_DISABLE_LIBRARY_VALIDATION=1` | `build-app.sh`、`make-dmg.sh` | **通常の配布では使いません。** Developer ID 署名のときに `com.apple.security.cs.disable-library-validation` を付けます（下記「Hardened Runtime での動作」参照）。既定では付けません。アドホック署名（`WB_SIGN_IDENTITY` なし）では Hardened Runtime と一緒に常に付けるため、この変数を指定するとエラーにします。署名後に、この例外がアドホック署名のときと指定したときだけ付いていることを確かめます。`make-dmg.sh` は、例外の付いたアプリを、同じコマンドでこの変数を明示していなければ DMG にしません（`WB_SIGN_IDENTITY` なしで、アプリがアドホック署名・Hardened Runtime ありの場合を除く） |
 
 - 証明書やプロファイルが見つからない場合は、ビルドを始める前に中止します。公証が受け付けられなかった場合は、`notarytool log` の内容を表示して中止します。
 - 同梱ライブラリ（`whisper.framework`・`libLAME.dylib`・`libsherpa-onnx-c-api.dylib`）を先に、アプリ本体を最後に、同じ証明書で署名します。
@@ -772,22 +772,23 @@ UTF-8（BOM なし）・LF で、一時ファイル経由で置き換えるた�
 | Silero VAD モデル v6.2.0（ggml 変換版 `ggml-org/whisper-vad`） | MIT（© 2020-present Silero Team。変換版も MIT と表示） | 同梱せず、利用者がダウンロード。許諾文の全文を `App/ThirdPartyNotices.txt` に収録 |
 
 - LGPL のライブラリを含むアプリを配布する場合は、ライセンス文の同梱、ライブラリを差し替えられる形での提供（このアプリは動的ライブラリとして同梱）、LAME のソースの入手方法の案内が必要です。正確な条件は LGPL の本文を確認してください。
-- `libLAME.dylib` を差し替えると、アプリの署名が無効になります。現在のアドホック署名のビルドでは、差し替えたライブラリとアプリを `codesign --force --sign - Contents/Frameworks/libLAME.dylib`、`codesign --force --sign - --entitlements App/WhisperBatch.entitlements "Sona.app"` の順に再署名すれば使えます（別ビルドの libLAME.dylib に差し替えて、動画の変換・文字起こしができることを確認済み）。
+- `libLAME.dylib` を差し替えると、アプリの署名が無効になります。現在のアドホック署名のビルドでは、アプリの entitlements を `codesign -d --entitlements - --xml "Sona.app" > ent.plist` で取り出してから、差し替えたライブラリとアプリを `codesign --force --sign - Contents/Frameworks/libLAME.dylib`、`codesign --force --sign - --options runtime --entitlements ent.plist "Sona.app"` の順に再署名すれば使えます（別ビルドの libLAME.dylib に差し替えて、Hardened Runtime のまま動画の変換・文字起こしができることを確認済み）。`--options runtime` を付けずに再署名しても動きますが、下記のライブラリの注入を防げなくなります。
 
 ### Hardened Runtime での動作（確認結果）
 
-`scripts/build-app.sh` の既定の署名（アドホック署名）は、Hardened Runtime を有効にしていません（`WB_SIGN_IDENTITY` を指定したときだけ有効にします）。Hardened Runtime を有効にした署名について、このアプリのコピーで次のことを確認しました（この Mac にはコード署名用の証明書がないため、すべてアドホック署名での確認です）。
+`scripts/build-app.sh` の既定の署名（アドホック署名）は、Hardened Runtime と `com.apple.security.cs.disable-library-validation` を付けます（2026-11-28 から。それまでは Hardened Runtime なし）。Developer ID 署名（`WB_SIGN_IDENTITY`）では Hardened Runtime だけを付け、この例外は `WB_DISABLE_LIBRARY_VALIDATION=1` を明示したときだけ付けます。このアプリのコピー（別の Bundle ID・App Sandbox 有効）で次のことを確認しました（この Mac にはコード署名用の証明書がないため、すべてアドホック署名での確認です）。「注入」は、`DYLD_INSERT_LIBRARIES` で試験用のライブラリを入れて起動し、そのライブラリが動いたかどうかです。
 
 | 署名の組み合わせ | 結果 |
 | --- | --- |
-| アドホック署名 + Hardened Runtime | **起動しません**。ライブラリ検証により `libLAME.dylib` の読み込みが「プロセスと Team ID が異なる」として拒否されます（アドホック署名には Team ID がないため） |
-| アドホック署名 + Hardened Runtime + `com.apple.security.cs.disable-library-validation` | 起動し、`whisper.framework` と `libLAME.dylib` が読み込まれ、動画と音声の文字起こしができました |
+| アドホック署名（Hardened Runtime なし。以前の既定） | 起動・動作します。**注入したライブラリが App Sandbox の中でもこのアプリとして動きます**（マイクなど、このアプリに与えた許可を使えるおそれがあります）。Vantage・Air の両方で確認 |
+| アドホック署名 + Hardened Runtime | **起動しません**。ライブラリ検証により `libLAME.dylib` の読み込みが拒否されます（「mapping process and mapped file (non-platform)」。アドホック署名には Team ID がないため） |
+| アドホック署名 + Hardened Runtime + `com.apple.security.cs.disable-library-validation`（現在の既定） | 起動し、**注入したライブラリは動きません**（Hardened Runtime が `DYLD_*` の環境変数を無視するため）。Whisper（Metal）・MP3 変換（LAME）・話者識別（sherpa-onnx / onnxruntime）・ローカルの言語モデル（llama.cpp, Qwen3 8B）・Qwen3-ASR が、Hardened Runtime なしと同じ結果になりました（Vantage。Air は Whisper と MP3 変換）。ライブラリの探索先（LC_RPATH）はアプリの中だけです。ライブ文字起こし（マイク・画面の音声の取り込み）は、許可の確認に操作が必要なため未確認です |
 | Developer ID 署名（アプリとライブラリを同じ Team ID で署名）+ Hardened Runtime | **未確認**（証明書がないため）。Apple の仕様上は同じ Team ID のライブラリは読み込まれますが、その場合、利用者が差し替えたライブラリは読み込まれません |
 
 Developer ID で配布する場合の方針:
 
 - **通常の配布ビルドでは `disable-library-validation` を付けません。** 同梱ライブラリとアプリを同じ証明書（同じ Team ID）で署名すれば、Apple の説明上、Hardened Runtime のライブラリ検証のもとでも読み込まれます（この組み合わせは上の表のとおり未確認）。
-- `com.apple.security.cs.disable-library-validation` は、Apple・同じ Team ID 以外が署名したライブラリ（アドホック署名を含む）の読み込みを許す広い例外です。付けると、アプリの中のライブラリを書き換えられた場合に、それが読み込まれるのを OS が防がなくなります。公証には付けたままでも出せますが、Apple はこの例外を必要なときだけ使うよう説明しています。必要だという根拠がない限り、このリポジトリでは付けず、自動で付けることもしません。
+- `com.apple.security.cs.disable-library-validation` は、Apple・同じ Team ID 以外が署名したライブラリ（アドホック署名を含む）の読み込みを許す広い例外です。付けると、アプリの中のライブラリを書き換えられた場合に、それが読み込まれるのを OS が防がなくなります。公証には付けたままでも出せますが、Apple はこの例外を必要なときだけ使うよう説明しています。Developer ID 署名では、必要だという根拠がない限り付けず、自動で付けることもしません（自動で付けるのは、付けないと起動しないアドホック署名のときだけです。アドホック署名でも、アプリの中のファイルを書き換えられる場合は、この例外の有無にかかわらず実行ファイル自体を差し替えられます）。
 - LGPL の「利用者がライブラリを差し替えられること」の扱い（差し替え後に利用者自身が再署名する手順を案内する、この例外を付ける など）は、この entitlement の有無だけで満たせるとは限りません。正確な条件は LGPL の本文で確認し、決めてから実際の証明書で動作を確認してください。
 
 - MP3 の基本特許は期限が切れていると一般に説明されていますが、配布する地域での扱いは各自で確認してください。

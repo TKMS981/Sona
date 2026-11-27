@@ -14,7 +14,11 @@
 # Xcode がなくても Command Line Tools（Swift 6.2 以降・macOS 27 SDK）で動く。
 #
 # 署名:
-#   既定はアドホック署名（ローカル実行用、Hardened Runtime なし）。
+#   既定はアドホック署名（ローカル実行・アドホック署名の DMG 用）。Hardened Runtime を付け、
+#   com.apple.security.cs.disable-library-validation も付ける（アドホック署名には Team ID がなく、付けないと
+#   同梱ライブラリを読み込めず起動しない）。Hardened Runtime により DYLD_INSERT_LIBRARIES などの環境変数での
+#   ライブラリの注入は無効になる（付けないと、注入したライブラリがマイクなどの許可を受けたこのアプリとして動ける）。
+#   この例外はアドホック署名のときだけ付ける。README の「Hardened Runtime での動作」を参照。
 #   環境変数 WB_SIGN_IDENTITY に Developer ID の証明書名を指定すると、アプリと同梱ライブラリを
 #   その証明書で署名し、Hardened Runtime（--options runtime）と署名時刻（--timestamp）を付ける。
 #     WB_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/build-app.sh
@@ -24,7 +28,7 @@
 #   WB_DISABLE_LIBRARY_VALIDATION=1（通常の配布では使わない）:
 #     アプリに com.apple.security.cs.disable-library-validation を付け、Apple・同じ Team ID 以外が署名した
 #     ライブラリも読み込めるようにする。広い例外なので、必要性を確かめたときだけ明示的に指定する。
-#     WB_SIGN_IDENTITY と併用したときだけ有効（アドホック署名では Hardened Runtime がないため意味がなく、エラーにする）。
+#     WB_SIGN_IDENTITY と併用したときだけ有効（アドホック署名では常に付けるので、指定するとエラーにする）。
 #     README の「Hardened Runtime での動作」を参照。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -145,45 +149,57 @@ nested=(
 [[ "$edition" == "vantage" ]] && nested+=("$app/Contents/Frameworks/llama.framework")
 entitlements="App/WhisperBatch.entitlements"
 
+# ライブラリ検証の例外を付けた entitlements の一時ファイルを使う（App/WhisperBatch.entitlements は変えない）。
+# 一時フォルダの後片付け（trap）は関数の外で設定する（zsh では関数の中の EXIT の trap は関数を抜けたときに動く）
+sign_tmp="$(mktemp -d)"
+trap 'rm -rf "$sign_tmp"' EXIT
+use_lv_exception() {
+  cp "$entitlements" "$sign_tmp/WhisperBatch.entitlements"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$sign_tmp/WhisperBatch.entitlements"
+  entitlements="$sign_tmp/WhisperBatch.entitlements"
+}
+
 if [[ -n "$identity" ]]; then
   echo "==> Developer ID 署名（Hardened Runtime・App Sandbox 有効）: $identity"
   if [[ "$disable_lv" == "1" ]]; then
     echo "    注意: ライブラリ検証を無効にします（com.apple.security.cs.disable-library-validation）。" >&2
     echo "          Apple・同じ Team ID 以外が署名したライブラリも読み込めるようになります。通常の配布では使いません。" >&2
-    sign_tmp="$(mktemp -d)"
-    trap 'rm -rf "$sign_tmp"' EXIT
-    cp "$entitlements" "$sign_tmp/WhisperBatch.entitlements"
-    /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$sign_tmp/WhisperBatch.entitlements"
-    entitlements="$sign_tmp/WhisperBatch.entitlements"
+    use_lv_exception
   fi
+  expected_lv="$disable_lv"
   sign=(codesign --force --sign "$identity" --options runtime --timestamp)
 else
-  echo "==> アドホック署名（App Sandbox 有効）"
-  sign=(codesign --force --sign - --timestamp=none)
+  # アドホック署名には Team ID がないため、ライブラリ検証の例外がないと同梱ライブラリを読み込めない。
+  # 例外を付けても Hardened Runtime により DYLD_* の環境変数は無視されるので、付けない（Hardened Runtime なし）より安全
+  echo "==> アドホック署名（Hardened Runtime・ライブラリ検証の例外・App Sandbox 有効）"
+  use_lv_exception
+  expected_lv=1
+  sign=(codesign --force --sign - --options runtime --timestamp=none)
 fi
 for item in "${nested[@]}"; do
   "${sign[@]}" "$item"
 done
 "${sign[@]}" --entitlements "$entitlements" "$app"
 codesign --verify --strict --deep --verbose=1 "$app"
-# ライブラリ検証の例外は、指定したときだけ付いていること
+# ライブラリ検証の例外は、アドホック署名のときと、Developer ID 署名で指定したときだけ付いていること
 app_entitlements="$(codesign --display --entitlements - --xml "$app" 2>/dev/null)"
 if [[ "$app_entitlements" == *com.apple.security.cs.disable-library-validation* ]]; then
   has_lv_exception=1
 else
   has_lv_exception=0
 fi
-if [[ "$has_lv_exception" != "$disable_lv" ]]; then
-  echo "署名の entitlements が想定と違います（disable-library-validation: 指定 $disable_lv / 実際 $has_lv_exception）" >&2
+if [[ "$has_lv_exception" != "$expected_lv" ]]; then
+  echo "署名の entitlements が想定と違います（disable-library-validation: 想定 $expected_lv / 実際 $has_lv_exception）" >&2
   exit 1
 fi
-if [[ -n "$identity" ]]; then
-  # Hardened Runtime が付いているか確認する（公証の必須条件）
-  codesign --display --verbose=2 "$app" 2>&1 | grep -q "flags=.*runtime" || {
-    echo "Hardened Runtime が有効になっていません" >&2
-    exit 1
-  }
-fi
+# Hardened Runtime が付いているか確認する（公証の必須条件。アドホック署名でもライブラリの注入を防ぐために付ける）
+# （出力を変数に入れてから調べる。`codesign | grep -q` は pipefail のもとで、grep が先に終わると codesign が
+# SIGPIPE で失敗し、有効でも「有効でない」と判定してしまう）
+app_signature="$(codesign --display --verbose=2 "$app" 2>&1)"
+[[ "$app_signature" == *"flags="*"runtime"* ]] || {
+  echo "Hardened Runtime が有効になっていません" >&2
+  exit 1
+}
 
 echo "==> 完了: $app"
 lipo -archs "$app/Contents/MacOS/Sona"
