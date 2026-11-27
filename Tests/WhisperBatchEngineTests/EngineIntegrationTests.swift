@@ -203,7 +203,7 @@ struct ModelDownloadTests {
         #expect(storage.isInstalled(model))
         #expect(verified.withLock { $0 })
         #expect((progress.last ?? 0) > 0.99)
-        #expect(!FileManager.default.fileExists(atPath: storage.partialURL(for: model.files[0], of: model).path))
+        #expect(storage.stagedDownloadFiles().isEmpty)
 
         try storage.delete(model)
         #expect(!storage.isInstalled(model))

@@ -114,7 +114,7 @@ struct LocalLLMDownloadNetworkTests {
         print("中止した時点の受信: \(atCancel / 1_000_000)MB / 再開用のデータ: \(resume.map { "\($0.count) バイト" } ?? "なし")")
         #expect(resume != nil)
         // 検証前のファイルは残さない
-        #expect(!FileManager.default.fileExists(atPath: storage.partialURL(for: model.files[0], of: model).path))
+        #expect(storage.stagedDownloadFiles().isEmpty)
         #expect(!storage.isInstalled(model))
 
         // 再開する（途中から受け取る）

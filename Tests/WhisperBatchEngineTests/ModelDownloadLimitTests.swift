@@ -103,7 +103,7 @@ final class ModelDownloadLimitTests {
     private func leftovers(_ model: SpeechModel) -> (partial: Bool, final: Bool) {
         let file = model.files[0]
         let fm = FileManager.default
-        return (fm.fileExists(atPath: storage.partialURL(for: file, of: model).path),
+        return (!storage.stagedDownloadFiles().isEmpty,
                 fm.fileExists(atPath: storage.fileURL(for: file, of: model).path))
     }
 
@@ -140,9 +140,10 @@ final class ModelDownloadLimitTests {
 
     @Test func httpErrorLeavesNothing() async throws {
         let m = model(size: 2000, sha256: "00", scenario: .init(status: 404, chunks: [Data("Not Found".utf8)]))
-        // 前回の残りの検証前ファイルがあっても消す
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try Data("stale".utf8).write(to: storage.partialURL(for: m.files[0], of: m))
+        // 異常終了したプロセスが残した検証前ファイルがあっても消す
+        let crashed = TemporaryWorkspace(base: storage.downloadWorkspace.base)
+        try Data("stale".utf8).write(to: crashed.makeFile(prefix: "model-", pathExtension: "download"))
+        crashed.abandonForTesting()
         let error = await download(m)
         #expect(failure(error) == .downloadHTTPError(statusCode: 404))
         #expect(leftovers(m) == (false, false))
@@ -205,6 +206,126 @@ final class ModelDownloadLimitTests {
         // 元に戻せば（時刻は変わるので確かめ直して）通る
         try body.write(to: url)
         try await storage.verifyContents(of: m)
+    }
+}
+
+/// 検証前のファイルの置き場所（プロセスごとのフォルダ・毎回別の名前）と、保存先への置き換え
+@Suite("モデルのダウンロード: 検証前のファイルと置き換え", .serialized)
+final class ModelDownloadStagingTests {
+    private let folder: URL
+    private let storage: ModelStorage
+
+    init() {
+        TestLocalization.setUp()
+        folder = FileManager.default.temporaryDirectory.appendingPathComponent("sona-staging-test-\(UUID().uuidString)")
+        storage = ModelStorage(directory: folder)
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    private static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func model(_ body: Data, chunkDelay: TimeInterval = 0) -> SpeechModel {
+        let path = "/sona-test/\(UUID().uuidString)/model.bin"
+        MockModelServer.scenarios.withLock {
+            $0[path] = .init(contentLength: body.count, chunks: [body.prefix(body.count / 2), body.suffix(body.count - body.count / 2)],
+                             chunkDelay: chunkDelay)
+        }
+        let file = ModelFile(name: "model-\(UUID().uuidString).bin", url: URL(string: "https://huggingface.co\(path)")!,
+                             sizeBytes: Int64(body.count), sha256: Self.sha256(body))
+        return SpeechModel(id: "test", engine: .whisper, files: [file])
+    }
+
+    private static func download(_ model: SpeechModel, into storage: ModelStorage) async -> ModelDownloadInterruption? {
+        do {
+            try await ModelDownloader.download(model, into: storage, resumeData: nil, progress: { _, _ in },
+                                               verifying: {}, configuration: { MockModelServer.configuration() })
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    @Test func eachDownloadUsesItsOwnPartialFileInsideOwnerOnlyFolder() throws {
+        let file = ModelFile(name: "a.bin", url: URL(string: "https://huggingface.co/x")!, sizeBytes: 1, sha256: "00")
+        let first = try storage.makePartialURL(for: file)
+        let second = try storage.makePartialURL(for: file)
+        #expect(first != second)
+        #expect(first.deletingLastPathComponent() == second.deletingLastPathComponent())
+        #expect(first.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == ".downloads")
+        // 検証前のファイルを置くフォルダは所有者だけが使える
+        let attributes = try FileManager.default.attributesOfItem(atPath: first.deletingLastPathComponent().path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+    }
+
+    @Test func concurrentDownloadsOfTheSameFileDoNotShareThePartialFile() async throws {
+        // 以前は検証前のファイルの名前が固定で、同時に取得すると一方が他方のファイルを消したり、
+        // 検証していないファイルを保存先に移したりできた
+        let body = Data((0 ..< 6000).map { UInt8($0 % 241) })
+        let m = model(body, chunkDelay: 0.05)
+        let storage = storage
+        async let a = Self.download(m, into: storage)
+        async let b = Self.download(m, into: storage)
+        let (ea, eb) = await (a, b)
+        #expect(ea == nil)
+        #expect(eb == nil)
+        #expect(storage.isInstalled(m))
+        try await storage.verifyContents(of: m)
+        #expect(storage.stagedDownloadFiles().isEmpty)
+    }
+
+    @Test func abandonedPartialFilesAreRemovedButLiveOnesAreKept() throws {
+        let base = storage.downloadWorkspace.base
+        // 異常終了したプロセス（ロックが外れている）
+        let crashed = TemporaryWorkspace(base: base)
+        let stale = try crashed.makeFile(prefix: "x-", pathExtension: "download")
+        crashed.abandonForTesting()
+        // 動いている別のプロセス（ロックを持っている）
+        let running = TemporaryWorkspace(base: base)
+        let live = try running.makeFile(prefix: "y-", pathExtension: "download")
+        defer { running.removeOwnFiles() }
+
+        storage.removeAbandonedDownloads()
+        #expect(!FileManager.default.fileExists(atPath: stale.path))
+        #expect(FileManager.default.fileExists(atPath: live.path))
+    }
+
+    @Test func verifiedFileReplacesPreviousFileInOneStep() async throws {
+        let body = Data((0 ..< 3000).map { UInt8($0 % 239) })
+        let m = model(body)
+        let final = storage.fileURL(for: m.files[0], of: m)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // 大きさの違う古いファイル（取得し直しの対象）。開いたままの読み手は古い内容を読み続けられる
+        try Data("old".utf8).write(to: final)
+        let reader = try FileHandle(forReadingFrom: final)
+        defer { try? reader.close() }
+
+        #expect(await Self.download(m, into: storage) == nil)
+        #expect(try Data(contentsOf: final) == body)
+        #expect(try reader.readToEnd() == Data("old".utf8))
+        #expect(storage.stagedDownloadFiles().isEmpty)
+    }
+
+    @Test func deletingModelAlsoRemovesPartialFileLeftByOlderVersion() throws {
+        let m = model(Data(repeating: 1, count: 10))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let legacy = storage.legacyPartialURL(for: m.files[0], of: m)
+        try Data("stale".utf8).write(to: legacy)
+        try storage.delete(m)
+        #expect(!FileManager.default.fileExists(atPath: legacy.path))
+    }
+}
+
+extension ModelStorage {
+    /// ダウンロード中・検証前のファイル（どのプロセスのものも）
+    func stagedDownloadFiles() -> [URL] {
+        let base = directory.appendingPathComponent(".downloads", isDirectory: true)
+        let items = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
+        return items.filter { $0.pathExtension == "download" }
     }
 }
 

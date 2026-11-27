@@ -191,6 +191,8 @@ final class AppModel {
         ConversionWorkspace.removeAbandonedFiles()
         LiveRecordingWorkspace.removeAbandonedFiles()
         DragExportWorkspace.removeAbandonedFiles()
+        // 異常終了などで残ったモデルのダウンロード途中のファイル（検証前）も消す
+        models.storage?.removeAbandonedDownloads()
         live.isBatchRunning = { [weak self] in self?.isRunning ?? false }
         // 通知（設定でオンにしたものだけ）
         live.session.onInputInterrupted = { [settings] message in
@@ -380,6 +382,7 @@ final class AppModel {
         await transcription.waitUntilFinished()
         for task in mp3ExportTasks.values { await task.value }
         ConversionWorkspace.removeOwnFiles()
+        models.storage?.removeOwnDownloadFiles()
     }
 
     var hasActiveWork: Bool { isRunning || !mp3ExportTasks.isEmpty || live.isActive || !speakerTasks.isEmpty }

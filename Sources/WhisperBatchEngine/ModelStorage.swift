@@ -32,9 +32,33 @@ public struct ModelStorage: Sendable {
         directory(for: model).appendingPathComponent(file.name)
     }
 
-    /// 検証前のダウンロード済みファイル
-    func partialURL(for file: ModelFile, of model: SpeechModel) -> URL {
+    /// 以前の版が検証前のファイルを置いていた場所（ファイル名が固定で、同時に動く別のプロセスと同じ場所を使っていた）。
+    /// いまは使わず、モデルの削除のときに残っていれば消す。
+    func legacyPartialURL(for file: ModelFile, of model: SpeechModel) -> URL {
         directory(for: model).appendingPathComponent(file.name + ".download")
+    }
+
+    /// ダウンロード中・検証前のファイルを置くフォルダ（保存先の中の `.downloads/`）。
+    ///
+    /// プロセスごとに別のフォルダ（0700）を使い、持ち主は flock で示す（`TemporaryWorkspace`）。
+    /// 保存先と同じボリュームにあるので、検証したファイルをそのまま `rename(2)` で置き換えられる。
+    var downloadWorkspace: TemporaryWorkspace {
+        DownloadWorkspaces.shared.workspace(base: directory.appendingPathComponent(".downloads", isDirectory: true))
+    }
+
+    /// 1 回のダウンロードで使う、検証前のファイルの場所（このプロセスのフォルダの中で、毎回別の名前）
+    func makePartialURL(for file: ModelFile) throws -> URL {
+        try downloadWorkspace.directory().appendingPathComponent("\(UUID().uuidString)-\(file.name).download")
+    }
+
+    /// 持ち主のプロセスが終わっている（異常終了などで残った）ダウンロード中のファイルを消す
+    public func removeAbandonedDownloads() {
+        downloadWorkspace.removeAbandoned()
+    }
+
+    /// このプロセスのダウンロード中のファイルを消す（アプリの終了時）
+    public func removeOwnDownloadFiles() {
+        downloadWorkspace.removeOwnFiles()
     }
 
     /// ファイルが揃っているか（あり、サイズが一致する）。内容は、ダウンロード直後と、読み込む直前
@@ -54,7 +78,7 @@ public struct ModelStorage: Sendable {
     public func delete(_ model: SpeechModel) throws {
         let fm = FileManager.default
         for file in model.files {
-            for url in [fileURL(for: file, of: model), partialURL(for: file, of: model)] where fm.fileExists(atPath: url.path) {
+            for url in [fileURL(for: file, of: model), legacyPartialURL(for: file, of: model)] where fm.fileExists(atPath: url.path) {
                 try fm.removeItem(at: url)
             }
         }
@@ -143,6 +167,23 @@ struct FileIdentity: Equatable, Sendable {
         a.device == b.device && a.inode == b.inode && a.size == b.size
             && a.modified.tv_sec == b.modified.tv_sec && a.modified.tv_nsec == b.modified.tv_nsec
             && a.changed.tv_sec == b.changed.tv_sec && a.changed.tv_nsec == b.changed.tv_nsec
+    }
+}
+
+/// 保存先ごとのダウンロード用の一時フォルダ（同じプロセスの中では保存先ごとに 1 つにする）
+final class DownloadWorkspaces: Sendable {
+    static let shared = DownloadWorkspaces()
+
+    private let workspaces = Mutex<[String: TemporaryWorkspace]>([:])
+
+    func workspace(base: URL) -> TemporaryWorkspace {
+        let key = base.standardizedFileURL.path
+        return workspaces.withLock { map in
+            if let existing = map[key] { return existing }
+            let created = TemporaryWorkspace(base: base)
+            map[key] = created
+            return created
+        }
     }
 }
 

@@ -114,6 +114,8 @@ public enum ModelDownloader {
                     ?? .downloadFailed(detail: L("download.detail.cannotCreateFolder", error.localizedDescription))),
                         resumeData: nil)
         }
+        // 異常終了したプロセスが残した検証前のファイルを消す（動いている別のプロセスのものには触れない）
+        storage.removeAbandonedDownloads()
         let remaining = model.files.filter { !storage.isInstalled($0, of: model) }
         let remainingBytes = remaining.reduce(Int64(0)) { $0 + $1.sizeBytes }
         let required = remainingBytes + max(remainingBytes / 10, 50_000_000)
@@ -147,9 +149,16 @@ public enum ModelDownloader {
         guard ModelDownloadHosts.isAllowed(file.url) else {
             throw .init(reason: .failed(.untrustedDownloadHost(host: ModelDownloadHosts.displayHost(file.url))), resumeData: nil)
         }
-        let partial = storage.partialURL(for: file, of: model)
-        // 検証前のファイル（前回の残り）は使わない。以降、失敗・中止のときも残さない
-        removePartial(partial)
+        // 検証前のファイルは、このプロセスだけのフォルダに毎回別の名前で置く（同時に動く別のプロセスと取り違えない）。
+        // 失敗・中止のときは残さない
+        let partial: URL
+        do {
+            partial = try storage.makePartialURL(for: file)
+        } catch {
+            throw .init(reason: .failed(ErrorMapper.map(error, during: .downloading)
+                    ?? .downloadFailed(detail: L("download.detail.cannotCreateFolder", error.localizedDescription))),
+                        resumeData: nil)
+        }
         let delegate = DownloadDelegate(destination: partial, expectedSize: file.sizeBytes, progress: progress)
         let session = URLSession(configuration: configuration(), delegate: delegate, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
@@ -204,13 +213,11 @@ public enum ModelDownloader {
             throw .init(reason: .failed(.checksumMismatch(modelName: model.displayName)), resumeData: nil)
         }
 
+        // 検証したファイルを、そのまま保存先に置く。rename(2) は同じボリュームの中で、前のファイルとの置き換えを
+        // 一度に行う（消してから移す間に、ファイルがない・中途半端な状態を作らない）
         let final = storage.fileURL(for: file, of: model)
-        do {
-            if FileManager.default.fileExists(atPath: final.path) {
-                try FileManager.default.removeItem(at: final)
-            }
-            try FileManager.default.moveItem(at: partial, to: final)
-        } catch {
+        if rename(partial.path, final.path) != 0 {
+            let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             removePartial(partial)
             throw .init(reason: .failed(ErrorMapper.map(error, during: .downloading)
                     ?? .downloadFailed(detail: L("download.detail.cannotSave", error.localizedDescription))),
